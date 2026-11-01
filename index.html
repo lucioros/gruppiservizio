@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gruppi di servizio</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+<script src="jspdf.umd.min.js"></script>
+<style>
+:root{
+  --bg:#f5f3ee; --card:#fff; --ink:#1f2a33; --muted:#66727c; --line:#e1ddd3;
+  --accent:#2f5d62; --accent-soft:#e3eeec; --warn:#a8442f;
+  --ann:#7a4b16; --ann-bg:#f6ead8; --sm:#2f5d62; --sm-bg:#e3eeec; --pr:#5a3d7a; --pr-bg:#ece4f4;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 "Source Sans 3",system-ui,sans-serif}
+header{background:var(--accent);color:#fff;padding:14px 16px 0}
+header h1{font:700 1.35rem "Source Serif 4",serif;margin:0 0 2px}
+header .sub{opacity:.8;font-size:.9rem;margin-bottom:10px}
+nav{display:flex;gap:4px}
+nav button{flex:1;background:transparent;border:0;color:#fff;opacity:.75;padding:10px 6px;font:600 1rem inherit;font-family:inherit;border-bottom:3px solid transparent;cursor:pointer}
+nav button.on{opacity:1;border-bottom-color:#fff}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.status{font-size:.85rem;color:var(--muted);margin:0 0 12px;min-height:1.2em}
+.status.err{color:var(--warn)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center}
+input,select,textarea{font:inherit;color:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;min-width:0}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.toolbar input[type=search]{flex:1 1 200px}
+.btn{font:600 .95rem inherit;font-family:inherit;padding:9px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+.btn.ghost{background:#fff;color:var(--accent)}
+.btn.danger{background:#fff;color:var(--warn);border-color:var(--warn)}
+button.btn:disabled{opacity:.5;cursor:default}
+.list{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .nm{flex:1;min-width:0;cursor:pointer}
+.row .nm b{font-weight:600}
+.row select{max-width:46%}
+.tag{display:inline-block;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:5px;margin-left:4px;vertical-align:1px}
+.t-ann{background:var(--ann-bg);color:var(--ann)} .t-sm{background:var(--sm-bg);color:var(--sm)} .t-pr{background:var(--pr-bg);color:var(--pr)}
+.t-role{background:#1f2a33;color:#fff} .t-in{background:#fbe3e0;color:#b3261e}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+.count{color:var(--muted);font-size:.9rem}
+.groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr));gap:14px}
+.gcard,.grid2>*{min-width:0}
+.grid2 select,.grid2 input,.addm select{width:100%}
+.ghead .btn{padding:9px 11px;flex:none}
+.gcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.gcard .ghead{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.gcard .ghead input{flex:1;font-weight:700;font-size:1.05rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid2 label,.field{display:flex;flex-direction:column;font-size:.8rem;color:var(--muted);gap:3px}
+.grid2 .full{grid-column:1/-1}
+.members{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+.members .m{display:flex;align-items:center;gap:6px;padding:5px 4px;font-size:.95rem;border-radius:6px;cursor:grab;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.members .m:hover{background:#f3f1ec}
+.members .m>span:not(.hdl){flex:1;min-width:0}
+.members .m .hdl{color:#a39f95;font-size:1.1rem;padding:2px 6px 2px 0;touch-action:none;cursor:grab;line-height:1}
+.members .m.dragging{opacity:.35}
+.gcard.drop{outline:3px dashed var(--accent);outline-offset:-3px;background:var(--accent-soft)}
+.drag-ghost{position:fixed;z-index:1000;pointer-events:none;background:var(--accent);color:#fff;padding:8px 12px;border-radius:8px;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.25);transform:translate(-50%,-120%);white-space:nowrap}
+.dnd-hint{font-size:.85rem;color:var(--muted);margin:-4px 0 12px}
+.members .m button{background:none;border:0;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:2px 6px}
+.addm{display:flex;gap:6px;margin-top:8px}
+.addm select{flex:1}
+.settings{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.settings .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.preview-wrap{overflow:auto;background:#d9d5cc;border-radius:12px;padding:14px}
+.sheet{background:#fff;margin:0 auto;padding:22px 48px;box-shadow:0 2px 10px rgba(0,0,0,.15);font-family:Arial,Helvetica,sans-serif;color:#000;width:760px;min-height:1075px}
+.sheet .tband{background:#2f5597;color:#fff;font-weight:700;text-align:center;font-size:22px;padding:3px;margin:0 0 22px}
+.sheet .tband.has-sub{margin-bottom:0}
+.sheet .cong{background:#c00000;color:#fff;font-weight:700;text-align:center;font-size:16px;padding:3px;margin:0 0 22px}
+.sgrid{display:grid;grid-template-columns:1fr 1fr;column-gap:84px;row-gap:28px;align-items:stretch}
+.sbox{border:1px solid #000;font-size:12px;display:flex;flex-direction:column}
+.sbox>div{padding:1px 3px;line-height:1.5}
+.sbox .gh{background:#bfbfbf;font-weight:700;text-align:center;border-bottom:1px solid #000}
+.sbox .yl{background:#ffc000}
+.sbox .rd{background:#c00000;color:#fff}
+.sbox .ml{flex:1;padding:0 3px;border-top:1px solid #000}
+.sbox .ml div{line-height:1.5}
+.sbox .ih{background:#d0cece;font-weight:700;text-align:center;border-top:1px solid #000;border-bottom:1px solid #000}
+.sbox .in{color:#f00}
+.sbox .tot{font-weight:700;font-size:10px}
+.s-an{color:#f00;font-weight:700}.s-sm{color:#0070c0;font-weight:700}.s-pr{font-weight:700}
+dialog{border:0;border-radius:14px;padding:0;max-width:440px;width:calc(100% - 24px)}
+dialog::backdrop{background:rgba(20,30,35,.45)}
+.dlg{padding:18px}
+.dlg h3{margin:0 0 12px;font:700 1.15rem "Source Serif 4",serif}
+.dlg .f{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;font-size:.85rem;color:var(--muted)}
+.checks{display:flex;flex-direction:column;gap:8px;margin:6px 0 12px}
+.checks label{display:flex;gap:10px;align-items:center;font-size:1rem;color:var(--ink)}
+.checks input{width:20px;height:20px}
+.dlg .acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
+.dlg .acts .sp{flex:1}
+.hint{font-size:.85rem;color:var(--muted);margin:4px 0 10px}
+.hidden{display:none!important}
+.login{position:fixed;inset:0;z-index:2000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+.lcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px;max-width:360px;width:100%;display:flex;flex-direction:column;gap:12px}
+.lcard h2{margin:0;font:700 1.4rem "Source Serif 4",serif;color:var(--accent)}
+.lcard p{margin:0;color:var(--muted)}
+.err{color:var(--warn)!important}
+@media (max-width:560px){
+  main{padding:12px}
+  .grid2{grid-template-columns:1fr}
+  .groups{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="login" class="login"><form id="loginForm" class="lcard" autocomplete="on">
+  <h2>Gruppi di servizio</h2>
+  <p>Inserisci la password della congregazione per aprire i dati.</p>
+  <input type="text" name="username" value="gruppi-servizio" autocomplete="username" class="hidden" aria-hidden="true">
+  <input type="password" id="loginPw" name="password" autocomplete="current-password" placeholder="Password">
+  <button class="btn" id="loginBtn" type="submit">Apri</button>
+  <p class="err" id="loginErr"></p>
+</form></div>
+<header>
+  <h1>Gruppi di servizio</h1>
+  <div class="sub" id="hdrCong">Programma per la bacheca</div>
+  <nav>
+    <button data-tab="pers" class="on">Proclamatori</button>
+    <button data-tab="grp">Gruppi</button>
+    <button data-tab="print">Stampa</button>
+  </nav>
+</header>
+<main>
+  <p class="status" id="status">Caricamento…</p>
+
+  <!-- PROCLAMATORI -->
+  <section id="tab-pers">
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Cerca proclamatore…">
+      <select id="fGroup"></select>
+      <button class="btn" id="btnAdd">+ Aggiungi</button>
+      <button class="btn ghost" id="btnBulk">Aggiungi elenco</button>
+    </div>
+    <p class="count" id="persCount"></p>
+    <div class="list" id="persList"></div>
+  </section>
+
+  <!-- GRUPPI -->
+  <section id="tab-grp" class="hidden">
+    <div class="toolbar">
+      <button class="btn" id="btnAddGroup">+ Nuovo gruppo</button>
+      <span class="count" id="grpCount"></span>
+    </div>
+    <p class="dnd-hint">Per spostare un proclamatore in un altro gruppo trascinalo sul gruppo di destinazione: col mouse cliccaci sopra e trascina, col dito tieni premuto un attimo sul nome (o trascina subito dalla maniglia ⠿).</p>
+    <div class="groups" id="grpList"></div>
+  </section>
+
+  <!-- STAMPA -->
+  <section id="tab-print" class="hidden">
+    <div class="settings">
+      <div class="grid">
+        <label class="field">Titolo<input id="sTitolo"></label>
+        <label class="field">Sottotitolo (facoltativo)<input id="sCong" placeholder="es. Congregazione Centro"></label>
+        <label class="field">Ordine nome
+          <select id="sOrdine"><option value="cn">Cognome Nome</option><option value="nc">Nome Cognome</option></select>
+        </label>
+        <label class="field">Sigla anziano<input id="sAnn" maxlength="6"></label>
+        <label class="field">Sigla servitore di ministero<input id="sSM" maxlength="6"></label>
+        <label class="field">Sigla pioniere regolare<input id="sPR" maxlength="6"></label>
+        <label class="field">Sigla inattivo<input id="sIN" maxlength="6"></label>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="btnPdfAnz">PDF per gli anziani</button>
+      <button class="btn" id="btnPdfBac">PDF per la bacheca</button>
+      <button class="btn ghost" id="btnBackup">Scarica copia dei dati</button>
+      <label class="btn ghost" style="display:inline-block">Ripristina copia<input type="file" id="fileImport" accept=".json,application/json" class="hidden"></label>
+    </div>
+    <p class="hint" id="pdfHint"></p>
+    <div class="settings"><b>Accesso e salvataggio</b>
+      <p class="hint" id="accStato"></p>
+      <div class="toolbar" style="margin:0"><button class="btn ghost" id="btnToken">Collega salvataggio GitHub</button><button class="btn ghost" id="btnPw">Cambia password</button></div>
+    </div>
+    <div class="toolbar"><span class="count">Anteprima:</span>
+      <select id="prevMode"><option value="anziani">Per gli anziani (con inattivi)</option><option value="bacheca">Per la bacheca (senza inattivi)</option></select></div>
+    <div class="preview-wrap"><div class="sheet" id="sheet"></div></div>
+  </section>
+</main>
+
+<!-- dialog proclamatore -->
+<dialog id="dlgP"><form class="dlg" id="formP" method="dialog">
+  <h3 id="dlgPTitle">Proclamatore</h3>
+  <label class="f">Cognome<input id="pCognome" autocomplete="off"></label>
+  <label class="f">Nome<input id="pNome" autocomplete="off"></label>
+  <div class="checks">
+    <label><input type="checkbox" id="pAnn"> Anziano</label>
+    <label><input type="checkbox" id="pSM"> Servitore di ministero</label>
+    <label><input type="checkbox" id="pPR"> Pioniere regolare</label>
+    <label><input type="checkbox" id="pIN"> Inattivo</label>
+  </div>
+  <label class="f">Gruppo di servizio<select id="pGruppo"></select></label>
+  <div class="acts">
+    <button type="button" class="btn danger" id="pDel">Elimina</button>
+    <span class="sp"></span>
+    <button type="button" class="btn ghost" id="pCancel">Annulla</button>
+    <button type="submit" class="btn" id="pSave">Salva</button>
+  </div>
+</form></dialog>
+
+<!-- dialog elenco -->
+<dialog id="dlgB"><form class="dlg" id="formB" method="dialog">
+  <h3>Aggiungi un elenco</h3>
+  <p class="hint">Un proclamatore per riga, nella forma <b>Cognome Nome</b>. Puoi aggiungere in fondo alla riga le sigle AN, SM, PR o IN (es. <i>Rossi Mario AN PR</i>).</p>
+  <textarea id="bText" rows="9" style="width:100%"></textarea>
+  <label class="f" style="margin-top:10px">Assegna al gruppo<select id="bGruppo"></select></label>
+  <div class="acts">
+    <button type="button" class="btn ghost" id="bCancel">Annulla</button>
+    <button type="submit" class="btn">Aggiungi</button>
+  </div>
+</form></dialog>
+
+<!-- dialog token -->
+<dialog id="dlgTok"><form class="dlg" id="formTok">
+  <h3>Collega il salvataggio su GitHub</h3>
+  <p class="hint">Serve una sola volta. Su GitHub crea un <b>fine-grained personal access token</b> con accesso solo al repository <b>gruppiservizio</b> e permesso <b>Contents: Read and write</b>, poi incollalo qui. Viene salvato cifrato con la password: gli altri fratelli non dovranno fare niente.</p>
+  <input id="tokIn" placeholder="github_pat_…" autocomplete="off" style="width:100%">
+  <p class="hint err" id="tokErr"></p>
+  <div class="acts"><button type="button" class="btn ghost" id="tokCancel">Annulla</button><button type="submit" class="btn">Collega</button></div>
+</form></dialog>
+<!-- dialog password -->
+<dialog id="dlgPw"><form class="dlg" id="formPw">
+  <h3>Cambia password</h3>
+  <label class="f">Password attuale<input type="password" id="pwOld" autocomplete="current-password"></label>
+  <label class="f">Nuova password (almeno 10 caratteri)<input type="password" id="pwNew" autocomplete="new-password"></label>
+  <label class="f">Ripeti la nuova password<input type="password" id="pwNew2" autocomplete="new-password"></label>
+  <p class="hint err" id="pwErr"></p>
+  <div class="acts"><button type="button" class="btn ghost" id="pwCancel">Annulla</button><button type="submit" class="btn">Cambia</button></div>
+</form></dialog>
+<!-- dialog conferma -->
+<dialog id="dlgC"><div class="dlg">
+  <h3 id="cTitle">Conferma</h3>
+  <p id="cText"></p>
+  <div class="acts">
+    <button type="button" class="btn ghost" id="cNo">Annulla</button>
+    <button type="button" class="btn danger" id="cYes">Conferma</button>
+  </div>
+</div></dialog>
+
+<script>
+"use strict";
+const GIORNI=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
+const DOC_PATH="congregazione/stato";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+
+function defaultState(){return{v:1,titolo:"Gruppi di servizio",congregazione:"",ordine:"cn",
+  sigle:{ann:"AN",sm:"SM",pr:"PR",in:"IN"},persone:[],gruppi:[]};}
+function normalize(s){
+  const d=defaultState(); s=Object.assign(d,s||{}); s.sigle=Object.assign(defaultState().sigle,s.sigle||{});
+  s.persone=Array.isArray(s.persone)?s.persone:[]; s.gruppi=Array.isArray(s.gruppi)?s.gruppi:[]; return s;
+}
+let S=defaultState();
+let printMode="anziani"; // "anziani" = con inattivi, "bacheca" = senza inattivi
+
+/* ---------- salvataggio su GitHub (dati cifrati con la password) ---------- */
+const GH={owner:"lucioros",repo:"gruppiservizio",branch:"main",path:"dati.json"};
+const API=`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`;
+const te=new TextEncoder(), td=new TextDecoder();
+const toB64=u8=>{let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s);};
+const fromB64=b=>Uint8Array.from(atob(b.replace(/\s/g,"")),c=>c.charCodeAt(0));
+async function deriveKey(pw,salt,iter){
+  const base=await crypto.subtle.importKey("raw",te.encode(pw),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:iter,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+}
+async function encObj(key,obj){const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,te.encode(JSON.stringify(obj)));return{iv:toB64(iv),ct:toB64(new Uint8Array(ct))};}
+async function decObj(key,e){const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:fromB64(e.iv)},key,fromB64(e.ct));return JSON.parse(td.decode(pt));}
+
+let K=null, KDF=null, FILE=null, SHA=null, TOKEN=null;
+let ready=false, readOnly=true, saveTimer=null, writing=false, pendingWrite=false, lastLocalEdit=0;
+function setStatus(t,err){const el=$("#status");el.textContent=t;el.classList.toggle("err",!!err);}
+function changed(){
+  lastLocalEdit=Date.now(); renderAll();
+  if(!ready)return;
+  if(!TOKEN){setStatus("Sola lettura: il salvataggio su GitHub non è ancora collegato (vedi Stampa → Accesso)",true);return;}
+  scheduleSave(1500);
+}
+function scheduleSave(ms){setStatus("Salvataggio…");clearTimeout(saveTimer);saveTimer=setTimeout(()=>{saveTimer=null;flush();},ms);}
+function ghHeaders(){const h={"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};if(TOKEN)h.Authorization="Bearer "+TOKEN;return h;}
+async function fetchRemote(){
+  // con il token: API (sempre aggiornata, dà anche lo "sha" per salvare); senza: il file pubblicato sul sito
+  if(TOKEN){
+    const r=await fetch(API+"?ref="+GH.branch+"&t="+Date.now(),{headers:ghHeaders(),cache:"no-store"});
+    if(r.status===404)return null;
+    if(!r.ok)throw new Error("github "+r.status);
+    const j=await r.json(); return{file:JSON.parse(td.decode(fromB64(j.content))),sha:j.sha};
+  }
+  const r=await fetch("dati.json?t="+Date.now(),{cache:"no-store"});
+  if(r.status===404)return null; if(!r.ok)throw new Error("sito "+r.status);
+  return{file:await r.json(),sha:null};
+}
+async function putFile(file,msg){
+  const body={message:msg,branch:GH.branch,content:toB64(te.encode(JSON.stringify(file)))};
+  if(SHA)body.sha=SHA;
+  const r=await fetch(API,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify(body)});
+  if(r.status===409||r.status===422){const e=new Error("conflict");e.code="conflict";throw e;}
+  if(r.status===401||r.status===403){const e=new Error("auth");e.code="auth";throw e;}
+  if(!r.ok)throw new Error("github "+r.status);
+  const j=await r.json(); SHA=j.content.sha; FILE=file;
+}
+async function flush(){
+  if(writing){pendingWrite=true;return;}
+  writing=true;
+  try{
+    const file=Object.assign({},FILE,{dati:await encObj(K,S),aggiornato:new Date().toISOString()});
+    await putFile(file,"Gruppi di servizio: aggiornamento");
+    setStatus("Salvato · aggiornato per tutti");
+  }catch(e){
+    if(e.code==="conflict"){
+      setStatus("Un altro fratello ha modificato nello stesso momento: ho ricaricato i dati. Ripeti l'ultima modifica.",true);
+      try{await applyRemote(true);}catch(_){}
+    }else if(e.code==="auth"){setStatus("Il token di GitHub non è più valido o non ha i permessi: ricollegalo da Stampa → Accesso",true);}
+    else setStatus("Salvataggio non riuscito (connessione?). Riprovo…",true),setTimeout(()=>{if(!saveTimer&&!writing)flush();},5000);
+  }
+  writing=false;
+  if(pendingWrite){pendingWrite=false;flush();}
+}
+async function applyRemote(force){
+  const rem=await fetchRemote(); if(!rem)return false;
+  if(!force&&rem.sha&&rem.sha===SHA)return false;
+  // se la password è stata cambiata da un altro, serve rientrare
+  if(rem.file.kdf.salt!==FILE.kdf.salt){location.reload();return false;}
+  S=normalize(await decObj(K,rem.file.dati)); FILE=rem.file; SHA=rem.sha||SHA; renderAll(); return true;
+}
+async function unlock(pw){
+  const rem=await fetchRemote();
+  if(!rem)throw new Error("Il file dei dati non esiste ancora nel repository.");
+  const f=rem.file; const key=await deriveKey(pw,fromB64(f.kdf.salt),f.kdf.iter);
+  let data; try{data=await decObj(key,f.dati);}catch(e){const er=new Error("Password errata");er.code="pw";throw er;}
+  K=key; FILE=f; S=normalize(data);
+  if(f.token){try{TOKEN=await decObj(key,f.token);}catch(e){TOKEN=null;}}
+  if(TOKEN){try{const fresh=await fetchRemote();if(fresh){FILE=fresh.file;SHA=fresh.sha;S=normalize(await decObj(K,FILE.dati));}}catch(e){}}
+  readOnly=!TOKEN; ready=true; renderAll(); renderAccess();
+  setStatus(TOKEN?"Dati aggiornati":"Sola lettura: collega il salvataggio da Stampa → Accesso",!TOKEN);
+  setInterval(async()=>{ // controlla le modifiche degli altri
+    if(document.hidden||!TOKEN||writing||saveTimer||Date.now()-lastLocalEdit<5000||drag)return;
+    try{if(await applyRemote(false))setStatus("Dati aggiornati con le modifiche di un altro fratello");}catch(e){}
+  },30000);
+}
+$("#loginForm").onsubmit=async e=>{
+  e.preventDefault(); const pw=$("#loginPw").value; if(!pw)return;
+  $("#loginErr").textContent=""; $("#loginBtn").disabled=true; $("#loginBtn").textContent="Apertura…";
+  try{await unlock(pw); $("#login").classList.add("hidden");}
+  catch(err){$("#loginErr").textContent=err.code==="pw"?"Password errata.":(err.message||"Errore di collegamento");}
+  $("#loginBtn").disabled=false; $("#loginBtn").textContent="Apri";
+};
+function renderAccess(){
+  const el=$("#accStato"); if(!el)return;
+  el.textContent=TOKEN?"Salvataggio su GitHub collegato: chi ha la password può modificare.":"Salvataggio non collegato: per ora i dati si possono solo vedere.";
+}
+$("#btnToken").onclick=()=>{$("#tokIn").value="";$("#tokErr").textContent="";$("#dlgTok").showModal();};
+$("#tokCancel").onclick=()=>$("#dlgTok").close();
+$("#formTok").onsubmit=async e=>{
+  e.preventDefault(); const t=$("#tokIn").value.trim(); if(!t)return; $("#tokErr").textContent="Verifico…";
+  try{
+    const r=await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}`,{headers:{"Accept":"application/vnd.github+json","Authorization":"Bearer "+t}});
+    if(!r.ok)throw new Error("Token non valido o senza accesso al repository ("+r.status+")");
+    const old=TOKEN; TOKEN=t;
+    const fresh=await fetchRemote(); SHA=fresh&&fresh.sha;
+    await putFile(Object.assign({},FILE,{token:await encObj(K,t),dati:await encObj(K,S)}),"Gruppi di servizio: collegato il salvataggio");
+    readOnly=false; renderAccess(); $("#dlgTok").close(); setStatus("Salvataggio collegato");
+  }catch(err){TOKEN=TOKEN&&$("#tokIn").value.trim()===TOKEN?null:TOKEN;$("#tokErr").textContent=err.code==="auth"?"Il token non ha il permesso di scrittura (Contents: Read and write).":err.message;}
+};
+$("#btnPw").onclick=()=>{["#pwOld","#pwNew","#pwNew2"].forEach(s=>$(s).value="");$("#pwErr").textContent="";$("#dlgPw").showModal();};
+$("#pwCancel").onclick=()=>$("#dlgPw").close();
+$("#formPw").onsubmit=async e=>{
+  e.preventDefault();
+  if(!TOKEN){$("#pwErr").textContent="Prima collega il salvataggio su GitHub.";return;}
+  const o=$("#pwOld").value,n=$("#pwNew").value,n2=$("#pwNew2").value;
+  if(n.length<10){$("#pwErr").textContent="Usa almeno 10 caratteri.";return;}
+  if(n!==n2){$("#pwErr").textContent="Le due password nuove non coincidono.";return;}
+  $("#pwErr").textContent="Controllo…";
+  try{
+    const kOld=await deriveKey(o,fromB64(FILE.kdf.salt),FILE.kdf.iter);
+    try{await decObj(kOld,FILE.dati);}catch(_){$("#pwErr").textContent="La password attuale non è corretta.";return;}
+    const salt=crypto.getRandomValues(new Uint8Array(16)),iter=FILE.kdf.iter;
+    const kNew=await deriveKey(n,salt,iter);
+    const file={formato:FILE.formato,v:FILE.v,kdf:{salt:toB64(salt),iter},dati:await encObj(kNew,S),token:await encObj(kNew,TOKEN),aggiornato:new Date().toISOString()};
+    const fresh=await fetchRemote(); SHA=fresh&&fresh.sha;
+    await putFile(file,"Gruppi di servizio: cambiata la password"); K=kNew;
+    $("#dlgPw").close(); setStatus("Password cambiata. Comunicala ai fratelli che usano il sito.");
+  }catch(err){$("#pwErr").textContent="Non riuscito: "+(err.message||err);}
+};
+
+/* ---------- utilità ---------- */
+const P=id=>S.persone.find(p=>p.id===id);
+const G=id=>S.gruppi.find(g=>g.id===id);
+function nomeP(p,ord){if(!p)return"";ord=ord||S.ordine;return(ord==="nc"?[p.nome,p.cognome]:[p.cognome,p.nome]).filter(Boolean).join(" ");}
+function cmpP(a,b){return (a.cognome||"").localeCompare(b.cognome||"","it",{sensitivity:"base"})||(a.nome||"").localeCompare(b.nome||"","it",{sensitivity:"base"});}
+// sigle come segmenti: [testo, tipo]
+function sigleP(p){const s=[];if(p.anz)s.push([S.sigle.ann,"an"]);else if(p.sm)s.push([S.sigle.sm,"sm"]);if(p.pr)s.push([S.sigle.pr,"pr"]);if(p.inatt)s.push([S.sigle.in,"in"]);return s.filter(x=>x[0]);}
+function etichettaP(p){const s=sigleP(p);return nomeP(p)+s.map(x=>" ("+x[0]+")").join("");}
+function tagsHtml(p){let h="";if(p.anz)h+='<span class="tag t-ann">'+esc(S.sigle.ann)+'</span>';else if(p.sm)h+='<span class="tag t-sm">'+esc(S.sigle.sm)+'</span>';if(p.pr)h+='<span class="tag t-pr">'+esc(S.sigle.pr)+'</span>';if(p.inatt)h+='<span class="tag t-in">'+esc(S.sigle.in)+'</span>';return h;}
+function membri(g){return S.persone.filter(p=>p.gruppo===g.id).sort(cmpP);}
+// attivi: sorvegliante, assistente, poi gli altri in ordine alfabetico
+function attiviStampa(g){
+  const m=membri(g).filter(p=>!p.inatt);
+  const top=[g.resp,g.ass].map(P).filter(p=>p&&p.gruppo===g.id&&!p.inatt);
+  return top.concat(m.filter(p=>!top.includes(p)));
+}
+function inattiviStampa(g){return membri(g).filter(p=>p.inatt);}
+function gruppiOrdinati(){return S.gruppi.slice();}
+function nomeGruppo(g,i){return g.nome||("Gruppo "+(i+1));}
+function quando(g){return [g.giorno,g.ora?("ore "+g.ora):""].filter(Boolean).join(" – ");}
+/* contenuto di un riquadro di stampa, condiviso da anteprima e PDF.
+   ogni riga: {bg, fg, align, segs:[{t, b, i, c}]} */
+const COL={blue:[47,85,151],gray:[191,191,191],gray2:[208,206,206],yellow:[255,192,0],red:[192,0,0],an:[255,0,0],sm:[0,112,192],ink:[0,0,0],white:[255,255,255],inred:[255,0,0]};
+function righeGruppo(g,i){
+  const r=P(g.resp),a=P(g.ass);
+  const head=[
+    {kind:"gh",bg:COL.gray,align:"center",segs:[{t:nomeGruppo(g,i).toUpperCase(),b:1}]},
+    {kind:"yl",bg:COL.yellow,segs:[{t:"Sorv. del gruppo: "},{t:nomeP(r),b:1}]},
+    {kind:"yl",bg:COL.yellow,segs:[{t:"Assistente: "},{t:nomeP(a),b:1}]},
+    {kind:"rd",bg:COL.red,fg:COL.white,segs:[{t:"Comitiva Giorno/Ora: ",b:1},{t:(g.giorno||"")+" "},{t:g.ora||"",b:1}]},
+  ];
+  if(g.luogo)head.push({kind:"rd",bg:COL.red,fg:COL.white,segs:[{t:"Luogo: ",b:1},{t:g.luogo}]});
+  const persona=(p,extra)=>{
+    const segs=[{t:nomeP(p),b:extra.b,i:extra.i,c:extra.c}];
+    sigleP(p).forEach(([t,k])=>segs.push({t:" ("+t+")",b:1,i:extra.i,c:k==="an"?COL.an:k==="sm"?COL.sm:k==="in"?COL.inred:extra.c}));
+    return{kind:"m",segs};
+  };
+  const att=attiviStampa(g).map(p=>persona(p,p.id===g.resp?{b:1,i:1}:p.id===g.ass?{b:1}:{}));
+  const ina=printMode==="bacheca"?[]:inattiviStampa(g).map(p=>persona(p,{c:COL.inred}));
+  return{head,att,ina,tot:att.length};
+}
+
+/* ---------- tabs ---------- */
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
+  ["pers","grp","print"].forEach(t=>$("#tab-"+t).classList.toggle("hidden",t!==b.dataset.tab));
+  if(b.dataset.tab==="print")renderPreview();
+});
+
+/* ---------- render ---------- */
+function groupOptions(sel,withAll){
+  let h=withAll?'<option value="*">Tutti i gruppi</option><option value="">Senza gruppo</option>':'<option value="">— Nessun gruppo —</option>';
+  S.gruppi.forEach((g,i)=>h+='<option value="'+g.id+'"'+(sel===g.id?" selected":"")+'>'+esc(nomeGruppo(g,i))+'</option>');
+  return h;
+}
+function renderPers(){
+  const fg=$("#fGroup"), cur=fg.value||"*"; fg.innerHTML=groupOptions(null,true); fg.value=[...fg.options].some(o=>o.value===cur)?cur:"*";
+  const q=$("#q").value.trim().toLowerCase();
+  let list=S.persone.slice().sort(cmpP).filter(p=>{
+    if(fg.value!=="*"&&(p.gruppo||"")!==fg.value)return false;
+    return !q||nomeP(p,"cn").toLowerCase().includes(q)||nomeP(p,"nc").toLowerCase().includes(q);
+  });
+  const nAnn=S.persone.filter(p=>p.anz).length,nSM=S.persone.filter(p=>p.sm&&!p.anz).length,nPR=S.persone.filter(p=>p.pr).length,nNo=S.persone.filter(p=>!G(p.gruppo)).length,nIn=S.persone.filter(p=>p.inatt).length;
+  $("#persCount").textContent=S.persone.length?`${S.persone.length} proclamatori · ${nAnn} anziani · ${nSM} servitori di ministero · ${nPR} pionieri regolari`+(nIn?` · ${nIn} inattivi`:"")+(nNo?` · ${nNo} senza gruppo`:""):"";
+  if(!list.length){$("#persList").innerHTML='<div class="empty">'+(S.persone.length?"Nessun risultato":"Nessun proclamatore. Tocca “+ Aggiungi” o “Aggiungi elenco”.")+'</div>';return;}
+  $("#persList").innerHTML=list.map(p=>{
+    const g=G(p.gruppo); let role="";
+    if(g&&g.resp===p.id)role='<span class="tag t-role">Sorv.</span>';else if(g&&g.ass===p.id)role='<span class="tag t-role">Ass.</span>';
+    return `<div class="row"><div class="nm" data-edit="${p.id}"><b>${esc(nomeP(p))}</b>${tagsHtml(p)}${role}</div><select data-pg="${p.id}">${groupOptions(p.gruppo,false)}</select></div>`;
+  }).join("");
+}
+function personOptions(sel,g){
+  // prima i componenti del gruppo, poi gli altri anziani/SM
+  const inG=membri(g), altri=S.persone.filter(p=>p.gruppo!==g.id&&(p.anz||p.sm)).sort(cmpP);
+  let h='<option value="">— Nessuno —</option>';
+  if(inG.length){h+='<optgroup label="Nel gruppo">'+inG.map(p=>`<option value="${p.id}"${sel===p.id?" selected":""}>${esc(etichettaP(p))}</option>`).join("")+'</optgroup>';}
+  if(altri.length){h+='<optgroup label="Altri anziani e servitori (verranno spostati qui)">'+altri.map(p=>`<option value="${p.id}"${sel===p.id?" selected":""}>${esc(etichettaP(p))}</option>`).join("")+'</optgroup>';}
+  return h;
+}
+function renderGroups(){
+  $("#grpCount").textContent=S.gruppi.length?S.gruppi.length+" gruppi":"";
+  if(!S.gruppi.length){$("#grpList").innerHTML='<div class="empty list">Nessun gruppo. Tocca “+ Nuovo gruppo”.</div>';return;}
+  const senza=S.persone.filter(p=>!G(p.gruppo)).sort(cmpP);
+  const altri=g=>S.persone.filter(p=>G(p.gruppo)&&p.gruppo!==g.id).sort(cmpP);
+  $("#grpList").innerHTML=S.gruppi.map((g,i)=>{
+    const m=membri(g);
+    const dayOpts='<option value="">—</option>'+GIORNI.map(d=>`<option${g.giorno===d?" selected":""}>${d}</option>`).join("");
+    const addOpts='<option value="">Aggiungi proclamatore…</option>'+
+      (senza.length?'<optgroup label="Senza gruppo">'+senza.map(p=>`<option value="${p.id}">${esc(etichettaP(p))}</option>`).join("")+'</optgroup>':"")+
+      (altri(g).length?'<optgroup label="Da altri gruppi (verrà spostato)">'+altri(g).map(p=>`<option value="${p.id}">${esc(etichettaP(p))} – ${esc(nomeGruppo(G(p.gruppo),S.gruppi.indexOf(G(p.gruppo))))}</option>`).join("")+'</optgroup>':"");
+    return `<div class="gcard" data-g="${g.id}">
+      <div class="ghead"><input data-f="nome" value="${esc(g.nome)}" placeholder="Gruppo ${i+1}">
+        <button class="btn ghost" data-act="up" title="Sposta prima"${i===0?" disabled":""}>↑</button>
+        <button class="btn danger" data-act="del" title="Elimina gruppo">✕</button></div>
+      <div class="grid2">
+        <label>Sorvegliante (responsabile)<select data-f="resp">${personOptions(g.resp,g)}</select></label>
+        <label>Assistente<select data-f="ass">${personOptions(g.ass,g)}</select></label>
+        <label class="full">Luogo della comitiva<input data-f="luogo" value="${esc(g.luogo)}" placeholder="es. Sala del Regno, Fam. Rossi…"></label>
+        <label>Giorno<select data-f="giorno">${dayOpts}</select></label>
+        <label>Ora<input type="time" data-f="ora" value="${esc(g.ora)}"></label>
+      </div>
+      <div class="members"><div class="count">${m.length} componenti</div>
+        ${m.map(p=>`<div class="m" data-pid="${p.id}"><span class="hdl" aria-hidden="true">⠿</span><span>${esc(nomeP(p))}${tagsHtml(p)}${g.resp===p.id?'<span class="tag t-role">Sorv.</span>':g.ass===p.id?'<span class="tag t-role">Ass.</span>':""}</span><button data-rm="${p.id}" title="Togli dal gruppo">✕</button></div>`).join("")}
+        <div class="addm"><select data-add>${addOpts}</select></div>
+      </div></div>`;
+  }).join("");
+}
+function renderSettings(){
+  $("#sTitolo").value=S.titolo; $("#sCong").value=S.congregazione; $("#sOrdine").value=S.ordine;
+  $("#sAnn").value=S.sigle.ann; $("#sSM").value=S.sigle.sm; $("#sPR").value=S.sigle.pr; $("#sIN").value=S.sigle.in;
+  $("#hdrCong").textContent=S.congregazione||"Programma per la bacheca";
+}
+function segsHtml(segs){return segs.map(s=>{const st=[];if(s.b)st.push("font-weight:700");if(s.i)st.push("font-style:italic");if(s.c)st.push(`color:rgb(${s.c})`);
+  return st.length?`<span style="${st.join(";")}">${esc(s.t)}</span>`:esc(s.t);}).join("");}
+function renderPreview(){
+  const sh=$("#sheet");
+  if(!S.gruppi.length){sh.innerHTML=`<div class="empty">Crea almeno un gruppo per vedere l'anteprima.</div>`;return;}
+  let h=`<div class="tband${S.congregazione?" has-sub":""}">${esc((S.titolo||"").toUpperCase())}</div>${S.congregazione?`<div class="cong">${esc(S.congregazione)}</div>`:""}<div class="sgrid">`;
+  S.gruppi.forEach((g,i)=>{
+    const R=righeGruppo(g,i);
+    h+=`<div class="sbox">${R.head.map(r=>`<div class="${r.kind}">${segsHtml(r.segs)}</div>`).join("")}
+      <div class="ml">${R.att.map(r=>`<div>${segsHtml(r.segs)}</div>`).join("")}</div>
+      ${R.ina.length?`<div class="ih">Inattivi</div><div>${R.ina.map(r=>`<div class="in">${segsHtml(r.segs)}</div>`).join("")}</div>`:""}
+      <div class="tot">Totale attivi ${R.tot}</div></div>`;
+  });
+  sh.innerHTML=h+"</div>";
+}
+function renderAll(){renderPers();renderGroups();renderSettings();if(!$("#tab-print").classList.contains("hidden"))renderPreview();}
+
+/* ---------- proclamatori: eventi ---------- */
+$("#q").oninput=renderPers; $("#fGroup").onchange=renderPers;
+$("#persList").addEventListener("change",e=>{const id=e.target.dataset.pg;if(!id)return;moveTo(P(id),e.target.value||null);changed();});
+$("#persList").addEventListener("click",e=>{const el=e.target.closest("[data-edit]");if(el)openP(el.dataset.edit);});
+function moveTo(p,gid){
+  if(!p)return; if(p.gruppo&&p.gruppo!==gid){const old=G(p.gruppo);if(old){if(old.resp===p.id)old.resp="";if(old.ass===p.id)old.ass="";}}
+  p.gruppo=gid||null;
+}
+let editId=null;
+function openP(id){
+  editId=id; const p=id?P(id):{cognome:"",nome:"",anz:false,sm:false,pr:false,gruppo:($("#fGroup").value&&$("#fGroup").value!=="*")?$("#fGroup").value:null};
+  $("#dlgPTitle").textContent=id?"Modifica proclamatore":"Nuovo proclamatore";
+  $("#pCognome").value=p.cognome||"";$("#pNome").value=p.nome||"";$("#pAnn").checked=!!p.anz;$("#pSM").checked=!!p.sm&&!p.anz;$("#pPR").checked=!!p.pr;$("#pIN").checked=!!p.inatt;
+  $("#pGruppo").innerHTML=groupOptions(p.gruppo,false); $("#pDel").classList.toggle("hidden",!id);
+  $("#dlgP").showModal(); setTimeout(()=>$("#pCognome").focus(),50);
+}
+$("#pAnn").onchange=()=>{if($("#pAnn").checked)$("#pSM").checked=false;};
+$("#pSM").onchange=()=>{if($("#pSM").checked)$("#pAnn").checked=false;};
+$("#btnAdd").onclick=()=>openP(null);
+$("#pCancel").onclick=()=>$("#dlgP").close();
+$("#formP").onsubmit=e=>{
+  e.preventDefault();
+  const cognome=$("#pCognome").value.trim(),nome=$("#pNome").value.trim(); if(!cognome&&!nome){$("#pCognome").focus();return;}
+  let p=editId?P(editId):null; if(!p){p={id:uid()};S.persone.push(p);}
+  Object.assign(p,{cognome,nome,anz:$("#pAnn").checked,sm:$("#pSM").checked&&!$("#pAnn").checked,pr:$("#pPR").checked,inatt:$("#pIN").checked});
+  moveTo(p,$("#pGruppo").value||null);
+  $("#dlgP").close(); changed();
+};
+$("#pDel").onclick=()=>{const p=P(editId);if(!p)return;$("#dlgP").close();
+  confirmDlg("Eliminare "+nomeP(p)+"?","Verrà tolto anche dal suo gruppo.",()=>{moveTo(p,null);S.persone=S.persone.filter(x=>x!==p);changed();});};
+
+$("#btnBulk").onclick=()=>{$("#bText").value="";$("#bGruppo").innerHTML=groupOptions(null,false);$("#dlgB").showModal();};
+$("#bCancel").onclick=()=>$("#dlgB").close();
+$("#formB").onsubmit=e=>{
+  e.preventDefault(); const gid=$("#bGruppo").value||null; let n=0;
+  $("#bText").value.split(/\r?\n/).forEach(line=>{
+    let w=line.trim().replace(/[(),;]/g," ").split(/\s+/).filter(Boolean); if(!w.length)return;
+    const flags={anz:false,sm:false,pr:false,inatt:false};
+    while(w.length>1){const t=w[w.length-1].toLowerCase().replace(/\./g,"");
+      if(["ann","an","anz","anziano"].includes(t))flags.anz=true; else if(["sm","servitore"].includes(t))flags.sm=true; else if(["pr","pioniere"].includes(t))flags.pr=true; else if(["in","inattivo","inattiva"].includes(t))flags.inatt=true; else break; w.pop();}
+    if(flags.anz)flags.sm=false;
+    S.persone.push(Object.assign({id:uid(),cognome:w[0],nome:w.slice(1).join(" "),gruppo:gid},flags)); n++;
+  });
+  $("#dlgB").close(); if(n)changed();
+};
+
+/* ---------- gruppi: eventi ---------- */
+$("#btnAddGroup").onclick=()=>{S.gruppi.push({id:uid(),nome:"Gruppo "+(S.gruppi.length+1),resp:"",ass:"",luogo:"",giorno:"",ora:""});changed();};
+const grpList=$("#grpList");
+grpList.addEventListener("change",e=>{
+  const card=e.target.closest("[data-g]"); if(!card)return; const g=G(card.dataset.g); const f=e.target.dataset.f;
+  if(e.target.hasAttribute("data-add")){const p=P(e.target.value);if(p){moveTo(p,g.id);changed();}return;}
+  if(!f)return;
+  if(f==="resp"||f==="ass"){
+    const id=e.target.value; const p=P(id);
+    if(p&&p.gruppo!==g.id)moveTo(p,g.id);
+    if(f==="resp"&&g.ass===id&&id)g.ass=""; if(f==="ass"&&g.resp===id&&id)g.resp="";
+    g[f]=id; changed(); return;
+  }
+  g[f]=e.target.value; changed();
+});
+grpList.addEventListener("input",e=>{ // aggiorna testo senza ridisegnare mentre si scrive
+  const card=e.target.closest("[data-g]"); const f=e.target.dataset.f; if(!card||!f||e.target.tagName!=="INPUT")return;
+  G(card.dataset.g)[f]=e.target.value; lastLocalEdit=Date.now();
+  if(ready&&TOKEN)scheduleSave(1500);
+});
+grpList.addEventListener("click",e=>{
+  const card=e.target.closest("[data-g]"); if(!card)return; const g=G(card.dataset.g);
+  const rm=e.target.closest("[data-rm]"); if(rm){moveTo(P(rm.dataset.rm),null);changed();return;}
+  const act=e.target.closest("[data-act]"); if(!act)return;
+  if(act.dataset.act==="up"){const i=S.gruppi.indexOf(g);if(i>0){S.gruppi.splice(i,1);S.gruppi.splice(i-1,0,g);changed();}}
+  if(act.dataset.act==="del"){confirmDlg("Eliminare "+nomeGruppo(g,S.gruppi.indexOf(g))+"?","I proclamatori resteranno nell'elenco, senza gruppo.",()=>{
+    S.persone.forEach(p=>{if(p.gruppo===g.id)p.gruppo=null;});S.gruppi=S.gruppi.filter(x=>x!==g);changed();});}
+});
+
+
+/* ---------- trascinamento tra gruppi (mouse e dito) ---------- */
+let drag=null;
+function dragStart(e){
+  const d=drag; if(!d||d.active)return;
+  d.active=true; clearTimeout(d.timer);
+  d.row.classList.add("dragging");
+  d.ghost=document.createElement("div"); d.ghost.className="drag-ghost"; d.ghost.textContent=nomeP(P(d.pid));
+  document.body.appendChild(d.ghost); dragMove(d.lx,d.ly);
+  if(navigator.vibrate)try{navigator.vibrate(15);}catch(_){}
+}
+function dragMove(x,y){
+  const d=drag; d.lx=x; d.ly=y; if(!d.active)return;
+  d.ghost.style.left=x+"px"; d.ghost.style.top=y+"px";
+  const el=document.elementFromPoint(x,y); const card=el&&el.closest(".gcard");
+  const tgt=card&&card.dataset.g!==d.from?card:null;
+  if(d.target!==tgt){if(d.target)d.target.classList.remove("drop"); if(tgt)tgt.classList.add("drop"); d.target=tgt;}
+  // scorrimento automatico vicino ai bordi dello schermo
+  const edge=70,h=window.innerHeight; d.scroll=y<edge?-Math.ceil((edge-y)/5):y>h-edge?Math.ceil((y-(h-edge))/5):0;
+  if(d.scroll&&!d.raf)d.raf=requestAnimationFrame(autoScroll);
+}
+function autoScroll(){const d=drag; if(!d||!d.active||!d.scroll){if(d)d.raf=0;return;} window.scrollBy(0,d.scroll); dragMove(d.lx,d.ly); d.raf=requestAnimationFrame(autoScroll);}
+function dragEnd(commit){
+  const d=drag; if(!d)return; drag=null; clearTimeout(d.timer);
+  if(d.raf)cancelAnimationFrame(d.raf);
+  if(d.ghost)d.ghost.remove(); d.row.classList.remove("dragging");
+  if(d.target)d.target.classList.remove("drop");
+  if(d.active&&commit&&d.target){const p=P(d.pid);const gid=d.target.dataset.g;if(p&&G(gid)){moveTo(p,gid);changed();}}
+  if(d.active){d.suppressClick=true;setTimeout(()=>{},0);}
+}
+grpList.addEventListener("pointerdown",e=>{
+  const row=e.target.closest(".m[data-pid]"); if(!row||e.target.closest("button"))return;
+  if(e.pointerType==="mouse"&&e.button!==0)return;
+  const card=row.closest(".gcard");
+  drag={pid:row.dataset.pid,row,from:card.dataset.g,sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,type:e.pointerType,active:false,target:null};
+  const onHandle=!!e.target.closest(".hdl");
+  if(onHandle){e.preventDefault();dragStart();}
+  else if(e.pointerType!=="mouse"){drag.timer=setTimeout(dragStart,320);} // dito: tieni premuto
+  else e.preventDefault(); // mouse: parte dopo un piccolo spostamento
+});
+window.addEventListener("pointermove",e=>{
+  if(!drag)return;
+  const dist=Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy);
+  if(!drag.active){
+    if(drag.type==="mouse"){if(dist>5){drag.lx=e.clientX;drag.ly=e.clientY;dragStart();}}
+    else if(dist>10){dragEnd(false);return;} // l'utente sta scorrendo la pagina
+  }
+  if(drag&&drag.active){e.preventDefault();dragMove(e.clientX,e.clientY);}
+},{passive:false});
+window.addEventListener("pointerup",()=>dragEnd(true));
+window.addEventListener("pointercancel",()=>{if(drag&&drag.active)return;dragEnd(false);});
+// durante il trascinamento col dito blocca lo scorrimento della pagina
+window.addEventListener("touchmove",e=>{if(drag&&drag.active){e.preventDefault();const t=e.touches[0];if(t)dragMove(t.clientX,t.clientY);}},{passive:false});
+window.addEventListener("touchend",()=>{if(drag&&drag.active)dragEnd(true);});
+grpList.addEventListener("contextmenu",e=>{if(e.target.closest(".m[data-pid]"))e.preventDefault();});
+window.addEventListener("keydown",e=>{if(e.key==="Escape"&&drag)dragEnd(false);});
+
+/* ---------- impostazioni stampa ---------- */
+[["#sTitolo","titolo"],["#sCong","congregazione"]].forEach(([s,k])=>$(s).addEventListener("change",e=>{S[k]=e.target.value;changed();}));
+$("#sOrdine").onchange=e=>{S.ordine=e.target.value;changed();};
+[["#sAnn","ann"],["#sSM","sm"],["#sPR","pr"],["#sIN","in"]].forEach(([s,k])=>$(s).addEventListener("change",e=>{S.sigle[k]=e.target.value.trim();changed();}));
+
+/* ---------- conferma ---------- */
+let cb=null;
+function confirmDlg(t,txt,fn){$("#cTitle").textContent=t;$("#cText").textContent=txt;cb=fn;$("#dlgC").showModal();}
+$("#cNo").onclick=()=>$("#dlgC").close();
+$("#cYes").onclick=()=>{$("#dlgC").close();if(cb)cb();cb=null;};
+
+/* ---------- PDF ---------- */
+function buildPdf(){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+  const W=210,H=297,MX=28,MT=8,MB=8,CG=20,RG=8,PAD=1.2,pt=0.3528;
+  const bw=(W-2*MX-CG)/2;
+  const all=S.gruppi.map((g,i)=>righeGruppo(g,i));
+  const rows=[];for(let i=0;i<all.length;i+=2)rows.push(all.slice(i,i+2));
+  const titleH=9, subH=S.congregazione?7:0, top0=MT+titleH+subH+6;
+  const lhOf=fs=>fs*pt*1.45;
+  // altezza di una riga di gruppi (i riquadri affiancati hanno la stessa altezza)
+  function rowGeom(r,fs){
+    const lh=lhOf(fs);
+    const nHead=Math.max(...r.map(R=>R.head.length));
+    const nAtt=Math.max(...r.map(R=>R.att.length));
+    const nIna=Math.max(...r.map(R=>R.ina.length));
+    const h=lh*(nHead+nAtt+(nIna?nIna+1:0)+1)+0.6;
+    return{lh,nHead,nAtt,nIna,h};
+  }
+  const fitsIn=(rs,fs)=>rs.reduce((s,r)=>s+rowGeom(r,fs).h,0)+RG*(rs.length-1)<=H-top0-MB;
+  let fs=10;
+  while(fs>7&&!fitsIn(rows,fs))fs-=0.25;
+  if(!fitsIn(rows,fs)){ // più pagine: carattere che fa stare almeno due righe di gruppi per pagina
+    fs=10; const ok=f=>rows.every((r,i)=>fitsIn(rows.slice(i,i+2),f));
+    while(fs>7&&!ok(fs))fs-=0.25;
+  }
+  function header(){
+    doc.setFillColor(...COL.blue);doc.rect(MX,MT,W-2*MX,titleH,"F");
+    doc.setTextColor(255);doc.setFont("helvetica","bold");doc.setFontSize(17);
+    doc.text((S.titolo||"").toUpperCase(),W/2,MT+titleH/2+17*pt*0.35,{align:"center"});
+    if(S.congregazione){doc.setFillColor(...COL.red);doc.rect(MX,MT+titleH,W-2*MX,subH,"F");doc.setTextColor(255);doc.setFont("helvetica","bold");doc.setFontSize(13);doc.text(S.congregazione,W/2,MT+titleH+subH/2+13*pt*0.35,{align:"center"});}
+  }
+  function style(s){return s.b&&s.i?"bolditalic":s.b?"bold":s.i?"italic":"normal";}
+  function drawLine(segs,x,y,w,lh,size,fg,align){
+    // gli spazi a inizio/fine segmento vengono misurati a parte (jsPDF non li conta in modo affidabile)
+    let f=size;
+    const parts=s=>{const t=s.t||"";const lead=t.length-t.trimStart().length,trail=t.length-t.trimEnd().length;return{lead,trail,core:t.trim()};};
+    const segW=s=>{doc.setFont("helvetica",style(s));doc.setFontSize(f);const p=parts(s);const sp=f*pt*0.36;return{...p,sp,w:doc.getTextWidth(p.core)+(p.lead+p.trail)*sp};};
+    const width=()=>segs.reduce((t,s)=>t+segW(s).w,0);
+    while(f>5&&width()>w-2*PAD)f-=0.25;
+    let cx=align==="center"?x+(w-width())/2:x+PAD; const by=y+lh*0.72;
+    segs.forEach(s=>{if(!s.t)return;const m=segW(s);doc.setTextColor(...(s.c||fg||COL.ink));cx+=m.lead*m.sp;if(m.core)doc.text(m.core,cx,by);cx+=m.w-m.lead*m.sp;});
+  }
+  function band(x,y,w,h,bg){doc.setFillColor(...bg);doc.rect(x,y,w,h,"F");}
+  function drawBox(R,x,y,G){
+    const {lh,nHead,nAtt,nIna,h}=G; let yy=y;
+    R.head.forEach((r,k)=>{band(x,yy,bw,lh,r.bg);drawLine(r.segs,x,yy,bw,lh,fs,r.fg,r.align);yy+=lh;});
+    // se il riquadro vicino ha una riga d'intestazione in più (luogo), allinea
+    if(R.head.length<nHead){band(x,yy,bw,lh*(nHead-R.head.length),COL.red);yy+=lh*(nHead-R.head.length);}
+    const yList=yy;
+    R.att.forEach(r=>{drawLine(r.segs,x,yy,bw,lh,fs);yy+=lh;});
+    yy=yList+nAtt*lh;
+    doc.setDrawColor(0);doc.setLineWidth(0.25);
+    if(nIna){
+      band(x,yy,bw,lh,COL.gray2);doc.line(x,yy,x+bw,yy);doc.line(x,yy+lh,x+bw,yy+lh);
+      drawLine([{t:"Inattivi",b:1}],x,yy,bw,lh,fs,null,"center");yy+=lh;
+      R.ina.forEach(r=>{drawLine(r.segs,x,yy+lh*0,bw,lh,fs,COL.inred);yy+=lh;});
+      yy=yList+nAtt*lh+lh*(nIna+1);
+    }
+    drawLine([{t:"Totale attivi "+R.tot,b:1}],x,y+h-lh,bw,lh,fs*0.8);
+    // bordi
+    doc.line(x,y+lh,x+bw,y+lh); doc.line(x,yList,x+bw,yList);
+    doc.rect(x,y,bw,h,"S");
+  }
+  header(); let y=top0;
+  rows.forEach(r=>{
+    const G=rowGeom(r,fs);
+    if(y+G.h>H-MB&&y>top0){doc.addPage();header();y=top0;}
+    r.forEach((R,ci)=>drawBox(R,MX+ci*(bw+CG),y,G));
+    y+=G.h+RG;
+  });
+  return doc;
+}
+function fileName(ext,tipo){const d=new Date();return `Gruppi di servizio${tipo?" - "+tipo:""} ${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.${ext}`;}
+function offer(name,data){
+  try{const url=URL.createObjectURL(data instanceof Blob?data:new Blob([data]));const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);$("#pdfHint").textContent="File scaricato.";}
+  catch(e){$("#pdfHint").textContent="Download non riuscito.";}
+}
+function scaricaPdf(mode){
+  if(!S.gruppi.length){$("#pdfHint").textContent="Crea almeno un gruppo prima di stampare.";return;}
+  if(!window.jspdf){$("#pdfHint").textContent="Il generatore PDF non è stato caricato. Ricarica la pagina.";return;}
+  const prev=printMode; printMode=mode;
+  let blob; try{blob=buildPdf().output("blob");}finally{printMode=prev;}
+  offer(fileName("pdf",mode==="bacheca"?"Bacheca":"Per anziani"),blob);
+}
+$("#btnPdfAnz").onclick=()=>scaricaPdf("anziani");
+$("#btnPdfBac").onclick=()=>scaricaPdf("bacheca");
+$("#prevMode").onchange=e=>{printMode=e.target.value;renderPreview();};
+$("#btnBackup").onclick=()=>offer(fileName("json"),new Blob([JSON.stringify(S,null,1)],{type:"application/json"}));
+$("#fileImport").onchange=async e=>{
+  const f=e.target.files[0]; e.target.value=""; if(!f)return;
+  try{const data=normalize(JSON.parse(await f.text()));
+    confirmDlg("Ripristinare la copia?",`Contiene ${data.persone.length} proclamatori e ${data.gruppi.length} gruppi. I dati attuali verranno sostituiti.`,()=>{S=data;changed();});}
+  catch(err){$("#pdfHint").textContent="File non valido.";}
+};
+
+renderAll();
+setTimeout(()=>$("#loginPw").focus(),100);
+</script>
+</body>
+</html>
