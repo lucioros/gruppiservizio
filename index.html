@@ -38,7 +38,8 @@ button.btn:disabled{opacity:.5;cursor:default}
 .row:first-child{border-top:0}
 .row .nm{flex:1;min-width:0;cursor:pointer}
 .row .nm b{font-weight:600}
-.row select{max-width:46%}
+.row select{max-width:58%;flex:none;padding-right:26px}
+@media (max-width:560px){.row select{font-size:.88rem;padding:8px 24px 8px 8px}.row{gap:6px}}
 .tag{display:inline-block;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:5px;margin-left:4px;vertical-align:1px}
 .t-ann{background:var(--ann-bg);color:var(--ann)} .t-sm{background:var(--sm-bg);color:var(--sm)} .t-pr{background:var(--pr-bg);color:var(--pr)}
 .t-role{background:#1f2a33;color:#fff} .t-in{background:#fbe3e0;color:#b3261e}
@@ -445,9 +446,15 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
 });
 
 /* ---------- render ---------- */
+// "Gruppo Cognome-del-sorvegliante"; se due sorveglianti hanno lo stesso cognome aggiunge l'iniziale del nome
+function etichettaGruppo(g,i){
+  const r=P(g.resp); if(!r||!r.cognome)return nomeGruppo(g,i);
+  const omonimi=S.gruppi.filter(x=>x!==g&&P(x.resp)&&(P(x.resp).cognome||"").toLowerCase()===r.cognome.toLowerCase()).length;
+  return "Gruppo "+r.cognome+(omonimi&&r.nome?" "+r.nome.charAt(0)+".":"");
+}
 function groupOptions(sel,withAll){
   let h=withAll?'<option value="*">Tutti i gruppi</option><option value="">Senza gruppo</option>':'<option value="">— Nessun gruppo —</option>';
-  S.gruppi.forEach((g,i)=>h+='<option value="'+g.id+'"'+(sel===g.id?" selected":"")+'>'+esc(nomeGruppo(g,i))+'</option>');
+  S.gruppi.forEach((g,i)=>h+='<option value="'+g.id+'"'+(sel===g.id?" selected":"")+'>'+esc(etichettaGruppo(g,i))+'</option>');
   return h;
 }
 function renderPers(){
