@@ -174,7 +174,7 @@ dialog::backdrop{background:rgba(20,30,35,.45)}
       <label class="btn ghost" style="display:inline-block">Ripristina copia<input type="file" id="fileImport" accept=".json,application/json" class="hidden"></label>
     </div>
     <p class="hint" id="pdfHint"></p>
-    <div class="settings"><b>Accesso e salvataggio</b>
+    <div class="settings hidden" id="accPanel"><b>Accesso e salvataggio</b>
       <p class="hint" id="accStato"></p>
       <div class="toolbar" style="margin:0"><button class="btn ghost" id="btnToken">Collega salvataggio GitHub</button><button class="btn ghost" id="btnPw">Cambia password</button></div>
     </div>
@@ -280,7 +280,7 @@ function setStatus(t,err){const el=$("#status");el.textContent=t;el.classList.to
 function changed(){
   lastLocalEdit=Date.now(); renderAll();
   if(!ready)return;
-  if(!TOKEN){setStatus("Sola lettura: il salvataggio su GitHub non è ancora collegato (vedi Stampa → Accesso)",true);return;}
+  if(!TOKEN){setStatus(MSG_NOSAVE(),true);return;}
   scheduleSave(1500);
 }
 function scheduleSave(ms){setStatus("Salvataggio…");clearTimeout(saveTimer);saveTimer=setTimeout(()=>{saveTimer=null;flush();},ms);}
@@ -317,7 +317,7 @@ async function flush(){
     if(e.code==="conflict"){
       setStatus("Un altro fratello ha modificato nello stesso momento: ho ricaricato i dati. Ripeti l'ultima modifica.",true);
       try{await applyRemote(true);}catch(_){}
-    }else if(e.code==="auth"){setStatus("Il token di GitHub non è più valido o non ha i permessi: ricollegalo da Stampa → Accesso",true);}
+    }else if(e.code==="auth"){setStatus(MSG_AUTH(),true);}
     else setStatus("Salvataggio non riuscito (connessione?). Riprovo…",true),setTimeout(()=>{if(!saveTimer&&!writing)flush();},5000);
   }
   writing=false;
@@ -339,7 +339,7 @@ async function unlock(pw){
   if(f.token){try{TOKEN=await decObj(key,f.token);}catch(e){TOKEN=null;}}
   if(TOKEN){try{const fresh=await fetchRemote();if(fresh){FILE=fresh.file;SHA=fresh.sha;S=normalize(await decObj(K,FILE.dati));}}catch(e){}}
   readOnly=!TOKEN; ready=true; renderAll(); renderAccess();
-  setStatus(TOKEN?"Dati aggiornati":"Sola lettura: collega il salvataggio da Stampa → Accesso",!TOKEN);
+  setStatus(TOKEN?"Dati aggiornati":MSG_NOSAVE(),!TOKEN);
   setInterval(async()=>{ // controlla le modifiche degli altri
     if(document.hidden||!TOKEN||writing||saveTimer||Date.now()-lastLocalEdit<5000||drag)return;
     try{if(await applyRemote(false))setStatus("Dati aggiornati con le modifiche di un altro fratello");}catch(e){}
@@ -352,6 +352,11 @@ $("#loginForm").onsubmit=async e=>{
   catch(err){$("#loginErr").textContent=err.code==="pw"?"Password errata.":(err.message||"Errore di collegamento");}
   $("#loginBtn").disabled=false; $("#loginBtn").textContent="Apri";
 };
+const ADMIN=()=>/^#admin$/i.test(location.hash);
+function showAdmin(){$("#accPanel").classList.toggle("hidden",!ADMIN());}
+window.addEventListener("hashchange",showAdmin); showAdmin();
+const MSG_NOSAVE=()=>ADMIN()?"Sola lettura: collega il salvataggio da Stampa → Accesso e salvataggio":"Sola lettura: il salvataggio non è attivo, avvisa chi gestisce il sito";
+const MSG_AUTH=()=>ADMIN()?"Il token di GitHub è scaduto o non ha i permessi: ricollegalo da Stampa → Accesso e salvataggio":"Non è possibile salvare: avvisa chi gestisce il sito";
 function renderAccess(){
   const el=$("#accStato"); if(!el)return;
   el.textContent=TOKEN?"Salvataggio su GitHub collegato: chi ha la password può modificare.":"Salvataggio non collegato: per ora i dati si possono solo vedere.";
