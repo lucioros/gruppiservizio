@@ -160,7 +160,7 @@ nav button{flex:1 0 auto;white-space:nowrap;padding:10px 12px}
   </nav>
 </header>
 <div id="gview">
-  <div class="ghdr"><h1>Ordini pubblicazioni</h1><div class="sub" id="gTitle"></div><div class="sub" id="gCong"></div></div>
+  <div class="ghdr"><button id="gBack" class="btn ghost small hidden" style="float:right">← Torna alla gestione</button><h1>Ordini pubblicazioni</h1><div class="sub" id="gTitle"></div><div class="sub" id="gCong"></div></div>
   <main>
     <p class="status" id="gStatus"></p>
     <div id="gList"></div>
@@ -575,6 +575,7 @@ function renderPubs(){
       <div class="toolbar" style="margin:10px 0 0">
         <button class="btn ghost" data-pa="det">${openDet.has(pb.id)?"Nascondi dettaglio":"Dettaglio per gruppo"}</button>
         ${pb.aperta?`<button class="btn ghost" data-pa="send">Invia ai sorveglianti</button>`:""}
+        ${pb.aperta&&mioGruppo()?`<button class="btn" data-pa="fill" data-g="${mioGruppo().id}">Segna per il mio gruppo</button>`:""}
         <button class="btn ghost" data-pa="edit">Modifica</button>
         <button class="btn ghost" data-pa="toggle">${pb.aperta?"Chiudi":"Riapri"}</button>
         <button class="btn danger" data-pa="del">Elimina</button></div>`;
@@ -590,6 +591,7 @@ function renderPubs(){
       h+=S.gruppi.map((g,i)=>{const o=ORD[g.id];const r=richieste(g.id,pb.id).sort((a,b)=>nomeId(g.id,a[0]).localeCompare(nomeId(g.id,b[0]),"it"));
         const nota=o&&o.note&&o.note[pb.id];
         let s=`<div class="dgrp"><div class="dgh"><b>${esc(nomeGruppo(g,i))}</b> · Sorv. ${esc(nomeP(P(g.resp))||"—")}<span class="dtot">${totGruppo(g.id,pb.id)}</span></div>`;
+        if(S.accessi[g.id]&&pb.aperta)s+=`<button class="btn ghost small" style="margin:6px 0" data-pa="fill" data-g="${g.id}">Segna o correggi le richieste di questo gruppo</button>`;
         if(!S.accessi[g.id])s+=`<div class="hint">Il gruppo non ha ancora la password: crearla in Impostazioni.</div>`;
         else if(!o||!o.ordini||!o.ordini[pb.id])s+=`<div class="hint">Nessuna risposta per ora.</div>`;
         else if(!r.length)s+=`<div class="hint">Nessuno del gruppo ha chiesto copie.</div>`;
@@ -621,11 +623,27 @@ $("#pubList").addEventListener("click",async e=>{
   if(a==="det"){openDet.has(pb.id)?openDet.delete(pb.id):openDet.add(pb.id);renderPubs();}
   if(a==="send"){openSend.has(pb.id)?openSend.delete(pb.id):openSend.add(pb.id);renderPubs();}
   if(a==="edit")openPub(pb);
+  if(a==="fill"){b.disabled=true;b.textContent="Apro…";openGroupAsAdmin(b.dataset.g).catch(err=>{setStatus("Non riuscito: "+(err.message||err),true);renderPubs();});}
   if(a==="toggle"){pb.aperta=!pb.aperta;changed();}
   if(a==="del")confirmDlg("Eliminare “"+pb.titolo+"”?","Le richieste già segnate per questa pubblicazione non saranno più visibili.",()=>{S.pubblicazioni=S.pubblicazioni.filter(x=>x!==pb);changed();});
   if(a==="copy"){const t=riepilogo(pb);const out=card.querySelector("[data-copied]");
     try{await navigator.clipboard.writeText(t);out.textContent="Copiato.";}catch(_){out.textContent="";const ta=document.createElement("textarea");ta.value=t;ta.style.cssText="width:100%;height:160px";card.querySelector(".pbox:last-child").appendChild(ta);ta.select();}}
 });
+// il gruppo del responsabile (se è anche sorvegliante o assistente, o comunque ne fa parte)
+function mioGruppo(){const r=P(S.impostazioni.responsabile);const g=r&&G(r.gruppo);return g&&S.accessi[g.id]?g:null;}
+// il responsabile apre la pagina degli ordini di un gruppo, come la vede il sorvegliante
+async function openGroupAsAdmin(gid){
+  const g=G(gid),i=S.gruppi.indexOf(g),a=S.accessi[gid]; const key=await gKey(a.pw,a.salt);
+  GRP={gid,key,salt:a.salt,payload:groupPayload(g,i),ord:normOrd(null),ordSha:null,edits:{},noteEdits:{},admin:true};
+  const o=await ghGet(`ordini/${gid}.json`); if(o&&o.json.kdf.salt===a.salt){GRP.ord=normOrd(await decObj(key,o.json.dati));GRP.ordSha=o.sha;}
+  document.body.classList.add("gmode"); $("#gBack").classList.remove("hidden"); gStatus(""); renderG(); window.scrollTo(0,0);
+}
+$("#gBack").onclick=async()=>{
+  if(gTimer){clearTimeout(gTimer);gTimer=null;await gFlush();}
+  while(gWriting)await new Promise(r=>setTimeout(r,200));
+  GRP=null; document.body.classList.remove("gmode"); $("#gBack").classList.add("hidden"); window.scrollTo(0,0);
+  ordLoaded=false; renderPubs(); await loadOrders();
+};
 let editPub=null;
 function openPub(pb){editPub=pb||null;$("#dlgPubTitle").textContent=pb?"Modifica pubblicazione":"Nuova pubblicazione";
   $("#pbTitolo").value=pb?pb.titolo:"";$("#pbNote").value=pb?pb.note||"":"";$("#pbScad").value=pb?pb.scadenza||"":"";$("#pbErr").textContent="";$("#dlgPub").showModal();setTimeout(()=>$("#pbTitolo").focus(),50);}
@@ -711,7 +729,7 @@ function renderG(){
   const d=GRP.payload;
   $("#gTitle").textContent=d.nome+(d.sorvegliante?" · Sorv. "+d.sorvegliante:"");
   $("#gCong").textContent=d.congregazione||"";
-  $("#gFoot").textContent=d.responsabile?`Per qualsiasi problema rivolgiti a ${d.responsabile}.`:"";
+  $("#gFoot").textContent=GRP.admin?"Stai segnando le richieste di questo gruppo come responsabile: il sorvegliante le vede uguali.":d.responsabile?`Per qualsiasi problema rivolgiti a ${d.responsabile}.`:"";
   if(!TOKEN)gStatus("Il salvataggio non è attivo: avvisa il responsabile dei gruppi.",true);
   const att=d.membri.filter(m=>!m.inatt), ina=d.membri.filter(m=>m.inatt);
   if(!d.pubblicazioni.length){$("#gList").innerHTML='<div class="empty list">Al momento non ci sono pubblicazioni da ordinare.</div>';return;}
