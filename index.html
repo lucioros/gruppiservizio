@@ -100,6 +100,7 @@ dialog::backdrop{background:rgba(20,30,35,.45)}
 .hidden{display:none!important}
 nav{overflow-x:auto;scrollbar-width:none} nav::-webkit-scrollbar{display:none}
 nav button{flex:1 0 auto;white-space:nowrap;padding:10px 12px}
+body:not(.role-admin) nav [data-tab=pub],body:not(.role-admin) nav [data-tab=imp]{display:none}
 #gview{display:none} body.gmode #gview{display:block} body.gmode header,body.gmode #amain{display:none}
 .ghdr{background:var(--accent);color:#fff;padding:14px 16px}
 .ghdr h1{font:700 1.35rem "Source Serif 4",serif;margin:0 0 2px}.ghdr .sub{opacity:.85;font-size:.95rem}
@@ -142,7 +143,7 @@ nav button{flex:1 0 auto;white-space:nowrap;padding:10px 12px}
 <body>
 <div id="login" class="login"><form id="loginForm" class="lcard" autocomplete="on">
   <h2>Gruppi di servizio</h2>
-  <p>Inserisci la tua password: quella del responsabile oppure quella del tuo gruppo di servizio.</p>
+  <p>Inserisci la tua password personale o quella del tuo gruppo di servizio.</p>
   <input type="text" name="username" value="gruppi-servizio" autocomplete="username" class="hidden" aria-hidden="true">
   <input type="password" id="loginPw" name="password" autocomplete="current-password" placeholder="Password">
   <button class="btn" id="loginBtn" type="submit">Apri</button>
@@ -151,9 +152,11 @@ nav button{flex:1 0 auto;white-space:nowrap;padding:10px 12px}
 <header>
   <h1>Gruppi di servizio</h1>
   <div class="sub" id="hdrCong">Programma per la bacheca</div>
+  <div class="sub" id="hdrRole" style="font-size:.8rem;opacity:.7"></div>
   <nav>
     <button data-tab="pers" class="on">Proclamatori</button>
     <button data-tab="grp">Gruppi</button>
+    <button data-tab="mio" id="navMio" class="hidden">Ordini del mio gruppo</button>
     <button data-tab="pub">Pubblicazioni</button>
     <button data-tab="print">Stampa</button>
     <button data-tab="imp">Impostazioni</button>
@@ -205,8 +208,9 @@ nav button{flex:1 0 auto;white-space:nowrap;padding:10px 12px}
   <!-- IMPOSTAZIONI -->
   <section id="tab-imp" class="hidden">
     <div class="settings"><b>Responsabile dei gruppi di servizio</b>
-      <p class="hint">L'anziano che gestisce l'organizzazione dei gruppi: è l'unico che usa la password principale e vede tutto.</p>
+      <p class="hint">L'anziano che assegna i fratelli ai gruppi. Con la sua password vede solo Proclamatori, Gruppi e Stampa, e gli ordini del suo gruppo: non vede le pubblicazioni, gli ordini degli altri gruppi né queste impostazioni.</p>
       <select id="impResp" style="max-width:420px;width:100%"></select>
+      <div id="impRespAcc" style="margin-top:10px"></div>
     </div>
     <div class="settings"><b>Accesso dei sorveglianti di gruppo</b>
       <p class="hint">Ogni gruppo ha la sua password, da dare al sorvegliante e all'assistente. Con quella vedono solo i componenti del loro gruppo e possono solo segnare chi ordina le pubblicazioni.</p>
@@ -214,7 +218,7 @@ nav button{flex:1 0 auto;white-space:nowrap;padding:10px 12px}
     </div>
     <div class="settings" id="accPanel"><b>Accesso e salvataggio</b>
       <p class="hint" id="accStato"></p>
-      <div class="toolbar" style="margin:0"><button class="btn ghost" id="btnToken">Collega salvataggio GitHub</button><button class="btn ghost" id="btnPw">Cambia la password principale</button></div>
+      <div class="toolbar" style="margin:0"><button class="btn ghost" id="btnToken">Collega salvataggio GitHub</button><button class="btn ghost" id="btnPw">Cambia la tua password (amministratore)</button></div>
     </div>
   </section>
 
@@ -323,19 +327,30 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 
 function defaultState(){return{v:1,titolo:"Gruppi di servizio",congregazione:"",ordine:"cn",
-  sigle:{ann:"AN",sm:"SM",pr:"PR",in:"IN"},persone:[],gruppi:[],pubblicazioni:[],impostazioni:{responsabile:""},accessi:{}};}
+  sigle:{ann:"AN",sm:"SM",pr:"PR",in:"IN"},persone:[],gruppi:[],pubblicazioni:[],impostazioni:{responsabile:""},mk:{}};}
 function normalize(s){
   const d=defaultState(); s=Object.assign(d,s||{}); s.sigle=Object.assign(defaultState().sigle,s.sigle||{});
   s.persone=Array.isArray(s.persone)?s.persone:[]; s.gruppi=Array.isArray(s.gruppi)?s.gruppi:[];
   s.pubblicazioni=Array.isArray(s.pubblicazioni)?s.pubblicazioni:[]; s.impostazioni=Object.assign({responsabile:""},s.impostazioni||{});
-  s.accessi=s.accessi&&typeof s.accessi==="object"?s.accessi:{}; return s;
+  s.mk=s.mk&&typeof s.mk==="object"?s.mk:{}; delete s.accessi; return s;
 }
 let S=defaultState();
 let printMode="anziani"; // "anziani" = con inattivi, "bacheca" = senza inattivi
 
-/* ---------- salvataggio su GitHub (dati cifrati con la password) ---------- */
-const GH={owner:"lucioros",repo:"gruppiservizio",branch:"main",path:"dati.json"};
-const API=`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`;
+/* ---------- salvataggio su GitHub e ruoli ----------
+   Tre ruoli, ognuno con la sua password:
+   - amministratore: vede e modifica tutto
+   - responsabile dei gruppi: assegna i fratelli ai gruppi (Proclamatori, Gruppi, Stampa) e vede gli ordini solo del suo gruppo
+   - sorvegliante / assistente: segna gli ordini solo del suo gruppo
+   File (il repository è pubblico, quindi è tutto cifrato):
+   dati.json            persone, gruppi, pubblicazioni e chiavi degli elenchi dei gruppi; chiave casuale DK, incartata
+                        con la password dell'amministratore e con quella del responsabile
+   admin.json           password dei gruppi e chiavi degli ordini: solo l'amministratore
+   accessi/indice.json  quali gruppi hanno un accesso (solo id e sale, nessun nome)
+   accessi/<gid>.json   nomi del gruppo e pubblicazioni aperte (chiave MK); MK e OK incartate con la password del gruppo
+   ordini/<gid>.json    copie richieste dal gruppo (chiave OK): le leggono solo il gruppo e l'amministratore */
+const GH={owner:"lucioros",repo:"gruppiservizio",branch:"main"};
+const ITER=310000;
 const te=new TextEncoder(), td=new TextDecoder();
 const toB64=u8=>{let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s);};
 const fromB64=b=>Uint8Array.from(atob(b.replace(/\s/g,"")),c=>c.charCodeAt(0));
@@ -346,141 +361,23 @@ async function deriveKey(pw,salt,iter){
 async function encObj(key,obj){const iv=crypto.getRandomValues(new Uint8Array(12));
   const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,te.encode(JSON.stringify(obj)));return{iv:toB64(iv),ct:toB64(new Uint8Array(ct))};}
 async function decObj(key,e){const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:fromB64(e.iv)},key,fromB64(e.ct));return JSON.parse(td.decode(pt));}
+const newRawB64=()=>toB64(crypto.getRandomValues(new Uint8Array(32)));
+const newSalt=()=>toB64(crypto.getRandomValues(new Uint8Array(16)));
+const KEYC={}; async function pwKey(pw,salt,iter){const id=pw+"|"+salt;return KEYC[id]||(KEYC[id]=await deriveKey(pw,fromB64(salt),iter||ITER));}
+const RAWC={}; async function rawKey(b64){return RAWC[b64]||(RAWC[b64]=await crypto.subtle.importKey("raw",fromB64(b64),"AES-GCM",false,["encrypt","decrypt"]));}
 
-let K=null, KDF=null, FILE=null, SHA=null, TOKEN=null;
+let ROLE=null;               // "admin" | "resp" | "gruppo"
+let DKb=null, DK=null;       // chiave di dati.json
+let AK=null, ADM=null, ADMSHA=null, RESPOK=null;
+let FILE=null, SHA=null, TOKEN=null;
 let ready=false, readOnly=true, saveTimer=null, writing=false, pendingWrite=false, lastLocalEdit=0;
-function setStatus(t,err){const el=$("#status");el.textContent=t;el.classList.toggle("err",!!err);}
-function changed(){
-  lastLocalEdit=Date.now(); renderAll();
-  if(!ready)return;
-  if(!TOKEN){setStatus(MSG_NOSAVE(),true);return;}
-  scheduleSave(1500);
-}
-function scheduleSave(ms){setStatus("Salvataggio…");clearTimeout(saveTimer);saveTimer=setTimeout(()=>{saveTimer=null;flush();},ms);}
-function ghHeaders(){const h={"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};if(TOKEN)h.Authorization="Bearer "+TOKEN;return h;}
-async function fetchRemote(){
-  // con il token: API (sempre aggiornata, dà anche lo "sha" per salvare); senza: il file pubblicato sul sito
-  if(TOKEN){
-    const r=await fetch(API+"?ref="+GH.branch+"&t="+Date.now(),{headers:ghHeaders(),cache:"no-store"});
-    if(r.status===404)return null;
-    if(!r.ok)throw new Error("github "+r.status);
-    const j=await r.json(); return{file:JSON.parse(td.decode(fromB64(j.content))),sha:j.sha};
-  }
-  const r=await fetch("dati.json?t="+Date.now(),{cache:"no-store"});
-  if(r.status===404)return null; if(!r.ok)throw new Error("sito "+r.status);
-  return{file:await r.json(),sha:null};
-}
-async function putFile(file,msg){
-  const body={message:msg,branch:GH.branch,content:toB64(te.encode(JSON.stringify(file)))};
-  if(SHA)body.sha=SHA;
-  const r=await fetch(API,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify(body)});
-  if(r.status===409||r.status===422){const e=new Error("conflict");e.code="conflict";throw e;}
-  if(r.status===401||r.status===403){const e=new Error("auth");e.code="auth";throw e;}
-  if(!r.ok)throw new Error("github "+r.status);
-  const j=await r.json(); SHA=j.content.sha; FILE=file;
-}
-async function flush(){
-  if(writing){pendingWrite=true;return;}
-  writing=true;
-  try{
-    const file=Object.assign({},FILE,{dati:await encObj(K,S),aggiornato:new Date().toISOString()});
-    await putFile(file,"Gruppi di servizio: aggiornamento");
-    setStatus("Salvato · aggiornato per tutti");
-    syncGroups();
-  }catch(e){
-    if(e.code==="conflict"){
-      setStatus("Un altro fratello ha modificato nello stesso momento: ho ricaricato i dati. Ripeti l'ultima modifica.",true);
-      try{await applyRemote(true);}catch(_){}
-    }else if(e.code==="auth"){setStatus(MSG_AUTH(),true);}
-    else setStatus("Salvataggio non riuscito (connessione?). Riprovo…",true),setTimeout(()=>{if(!saveTimer&&!writing)flush();},5000);
-  }
-  writing=false;
-  if(pendingWrite){pendingWrite=false;flush();}
-}
-async function applyRemote(force){
-  const rem=await fetchRemote(); if(!rem)return false;
-  if(!force&&rem.sha&&rem.sha===SHA)return false;
-  // se la password è stata cambiata da un altro, serve rientrare
-  if(rem.file.kdf.salt!==FILE.kdf.salt){location.reload();return false;}
-  S=normalize(await decObj(K,rem.file.dati)); FILE=rem.file; SHA=rem.sha||SHA; renderAll(); return true;
-}
-async function unlock(pw){
-  const rem=await fetchRemote();
-  if(!rem)throw new Error("Il file dei dati non esiste ancora nel repository.");
-  const f=rem.file; const key=await deriveKey(pw,fromB64(f.kdf.salt),f.kdf.iter);
-  let data; try{data=await decObj(key,f.dati);}catch(e){const er=new Error("Password errata");er.code="pw";throw er;}
-  K=key; FILE=f; S=normalize(data);
-  if(f.token){try{TOKEN=await decObj(key,f.token);}catch(e){TOKEN=null;}}
-  if(TOKEN){try{const fresh=await fetchRemote();if(fresh){FILE=fresh.file;SHA=fresh.sha;S=normalize(await decObj(K,FILE.dati));}}catch(e){}}
-  MODE="admin"; readOnly=!TOKEN; ready=true; renderAll(); renderAccess(); setTimeout(syncGroups,1500); loadOrders();
-  setStatus(TOKEN?"Dati aggiornati":MSG_NOSAVE(),!TOKEN);
-  setInterval(async()=>{ // controlla le modifiche degli altri
-    if(document.hidden||!TOKEN||writing||saveTimer||Date.now()-lastLocalEdit<5000||drag)return;
-    try{if(await applyRemote(false))setStatus("Dati aggiornati con le modifiche di un altro fratello");}catch(e){}
-  },30000);
-}
-$("#loginForm").onsubmit=async e=>{
-  e.preventDefault(); const pw=$("#loginPw").value; if(!pw)return;
-  $("#loginErr").textContent=""; $("#loginBtn").disabled=true; $("#loginBtn").textContent="Apertura…";
-  try{
-    try{await unlock(pw);}
-    catch(err){if(err.code!=="pw")throw err; await unlockGroup(pw);} // non è la password principale: provo quelle dei gruppi
-    $("#login").classList.add("hidden");
-  }catch(err){$("#loginErr").textContent=err.code==="pw"?"Password errata.":(err.message||"Errore di collegamento");}
-  $("#loginBtn").disabled=false; $("#loginBtn").textContent="Apri";
-};
-const MSG_NOSAVE=()=>"Sola lettura: collega il salvataggio da Impostazioni → Accesso e salvataggio";
-const MSG_AUTH=()=>"Il token di GitHub è scaduto o non ha i permessi: ricollegalo da Impostazioni → Accesso e salvataggio";
-function renderAccess(){
-  const el=$("#accStato"); if(!el)return;
-  el.textContent=TOKEN?"Salvataggio su GitHub collegato: chi ha la password può modificare.":"Salvataggio non collegato: per ora i dati si possono solo vedere.";
-}
-$("#btnToken").onclick=()=>{$("#tokIn").value="";$("#tokErr").textContent="";$("#dlgTok").showModal();};
-$("#tokCancel").onclick=()=>$("#dlgTok").close();
-$("#formTok").onsubmit=async e=>{
-  e.preventDefault(); const t=$("#tokIn").value.trim(); if(!t)return; $("#tokErr").textContent="Verifico…";
-  try{
-    const r=await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}`,{headers:{"Accept":"application/vnd.github+json","Authorization":"Bearer "+t}});
-    if(!r.ok)throw new Error("Token non valido o senza accesso al repository ("+r.status+")");
-    const old=TOKEN; TOKEN=t;
-    const fresh=await fetchRemote(); SHA=fresh&&fresh.sha;
-    await putFile(Object.assign({},FILE,{token:await encObj(K,t),dati:await encObj(K,S)}),"Gruppi di servizio: collegato il salvataggio");
-    readOnly=false; renderAccess(); $("#dlgTok").close(); setStatus("Salvataggio collegato"); syncGroups();
-  }catch(err){TOKEN=TOKEN&&$("#tokIn").value.trim()===TOKEN?null:TOKEN;$("#tokErr").textContent=err.code==="auth"?"Il token non ha il permesso di scrittura (Contents: Read and write).":err.message;}
-};
-$("#btnPw").onclick=()=>{["#pwOld","#pwNew","#pwNew2"].forEach(s=>$(s).value="");$("#pwErr").textContent="";$("#dlgPw").showModal();};
-$("#pwCancel").onclick=()=>$("#dlgPw").close();
-$("#formPw").onsubmit=async e=>{
-  e.preventDefault();
-  if(!TOKEN){$("#pwErr").textContent="Prima collega il salvataggio su GitHub.";return;}
-  const o=$("#pwOld").value,n=$("#pwNew").value,n2=$("#pwNew2").value;
-  if(n.length<10){$("#pwErr").textContent="Usa almeno 10 caratteri.";return;}
-  if(n!==n2){$("#pwErr").textContent="Le due password nuove non coincidono.";return;}
-  $("#pwErr").textContent="Controllo…";
-  try{
-    const kOld=await deriveKey(o,fromB64(FILE.kdf.salt),FILE.kdf.iter);
-    try{await decObj(kOld,FILE.dati);}catch(_){$("#pwErr").textContent="La password attuale non è corretta.";return;}
-    const salt=crypto.getRandomValues(new Uint8Array(16)),iter=FILE.kdf.iter;
-    const kNew=await deriveKey(n,salt,iter);
-    const file={formato:FILE.formato,v:FILE.v,kdf:{salt:toB64(salt),iter},dati:await encObj(kNew,S),token:await encObj(kNew,TOKEN),aggiornato:new Date().toISOString()};
-    const fresh=await fetchRemote(); SHA=fresh&&fresh.sha;
-    await putFile(file,"Gruppi di servizio: cambiata la password"); K=kNew;
-    $("#dlgPw").close(); setStatus("Password principale cambiata. Le password dei gruppi restano uguali.");
-  }catch(err){$("#pwErr").textContent="Non riuscito: "+(err.message||err);}
-};
+function normAdm(a){a=a||{};a.accessi=a.accessi||{};a.ok=a.ok||{};a.resp=a.resp||null;return a;}
 
-/* ---------- pubblicazioni e accesso dei sorveglianti ----------
-   dati.json            -> tutto, cifrato con la password del responsabile (anche le password dei gruppi)
-   accessi/indice.json  -> elenco dei gruppi con accesso (solo id e "sale", nessun nome)
-   accessi/<gid>.json   -> nomi del gruppo + pubblicazioni aperte, cifrati con la password del gruppo (scritto dal responsabile)
-   ordini/<gid>.json    -> quantità richieste dal gruppo, cifrate con la password del gruppo (scritto dal sorvegliante) */
-let MODE=null; // "admin" | "gruppo"
-const ITER=310000;
-const SITE=()=>location.origin+location.pathname;
+/* ----- GitHub ----- */
 const apiUrl=p=>`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${p}`;
+function ghHeaders(auth=true){const h={"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};if(auth&&TOKEN)h.Authorization="Bearer "+TOKEN;return h;}
 async function ghGet(path,auth=true){
-  const h={"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}; if(auth&&TOKEN)h.Authorization="Bearer "+TOKEN;
-  const r=await fetch(apiUrl(path)+"?ref="+GH.branch+"&t="+Date.now(),{headers:h,cache:"no-store"});
+  const r=await fetch(apiUrl(path)+"?ref="+GH.branch+"&t="+Date.now(),{headers:ghHeaders(auth),cache:"no-store"});
   if(r.status===404)return null; if(!r.ok)throw new Error("github "+r.status);
   const j=await r.json(); return{json:JSON.parse(td.decode(fromB64(j.content))),sha:j.sha};
 }
@@ -493,63 +390,248 @@ async function ghPut(path,obj,sha,msg){
   if(!r.ok)throw new Error("github "+r.status);
   return (await r.json()).content.sha;
 }
+async function ghPutFresh(path,obj,msg){const cur=await ghGet(path);return ghPut(path,obj,cur&&cur.sha,msg);}
 async function ghDel(path,msg){const cur=await ghGet(path);if(!cur)return;
   await fetch(apiUrl(path),{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify({message:msg,branch:GH.branch,sha:cur.sha})});}
-const KEYS={};
-async function gKey(pw,salt){const id=pw+"|"+salt;return KEYS[id]||(KEYS[id]=await deriveKey(pw,fromB64(salt),ITER));}
+
+/* ----- salvataggio di dati.json ----- */
+function setStatus(t,err){const el=$("#status");el.textContent=t;el.classList.toggle("err",!!err);}
+function changed(){
+  lastLocalEdit=Date.now(); renderAll();
+  if(!ready)return;
+  if(!TOKEN){setStatus(MSG_NOSAVE(),true);return;}
+  scheduleSave(1500);
+}
+function scheduleSave(ms){setStatus("Salvataggio…");clearTimeout(saveTimer);saveTimer=setTimeout(()=>{saveTimer=null;flush();},ms);}
+async function calcRespOk(){ // la chiave degli ordini del gruppo del responsabile, leggibile solo con la sua password
+  const r=ADM.resp,kr=FILE.keys&&FILE.keys.resp; if(!r||!kr)return null;
+  const p=P(S.impostazioni.responsabile),g=p&&G(p.gruppo); if(!g||!ADM.ok[g.id])return null;
+  return encObj(await pwKey(r.pw,kr.salt,kr.iter),{gid:g.id,ok:ADM.ok[g.id]});
+}
+async function buildDati(){
+  const f={formato:"gruppi-servizio-cifrato",v:2,keys:FILE.keys,dati:await encObj(DK,S),token:TOKEN?await encObj(DK,TOKEN):null,respOk:FILE.respOk||null,aggiornato:new Date().toISOString()};
+  if(ROLE==="admin")f.respOk=await calcRespOk();
+  return f;
+}
+async function putDati(msg){const f=await buildDati();SHA=await ghPut("dati.json",f,SHA,msg);FILE=f;}
+async function saveAdm(msg){
+  const f={formato:"gruppi-servizio-admin",v:1,dati:await encObj(AK,ADM),aggiornato:new Date().toISOString()};
+  try{ADMSHA=await ghPut("admin.json",f,ADMSHA,msg);}catch(e){if(e.code!=="conflict")throw e;ADMSHA=await ghPutFresh("admin.json",f,msg);}
+}
+async function flush(){
+  if(writing){pendingWrite=true;return;}
+  writing=true;
+  try{
+    await putDati("Gruppi di servizio: aggiornamento");
+    setStatus("Salvato · aggiornato per tutti");
+    syncGroups();
+  }catch(e){
+    if(e.code==="conflict"){
+      setStatus("Qualcun altro ha modificato nello stesso momento: ho ricaricato i dati. Ripeti l'ultima modifica.",true);
+      try{await applyRemote(true);}catch(_){}
+    }else if(e.code==="auth"){setStatus(MSG_AUTH(),true);}
+    else setStatus("Salvataggio non riuscito (connessione?). Riprovo…",true),setTimeout(()=>{if(!saveTimer&&!writing)flush();},5000);
+  }
+  writing=false;
+  if(pendingWrite){pendingWrite=false;flush();}
+}
+async function applyRemote(force){
+  const rem=TOKEN?await ghGet("dati.json"):null; if(!rem)return false;
+  if(!force&&rem.sha===SHA)return false;
+  if(JSON.stringify(rem.json.keys)!==JSON.stringify(FILE.keys)){location.reload();return false;} // password cambiate: serve rientrare
+  S=normalize(await decObj(DK,rem.json.dati)); FILE=rem.json; SHA=rem.sha; renderAll(); return true;
+}
+
+/* ----- apertura con la password ----- */
+async function openDati(f,pw){ // prova la password come amministratore e come responsabile
+  for(const r of ["admin","resp"]){const e=f.keys&&f.keys[r]; if(!e)continue;
+    const k=await pwKey(pw,e.salt,e.iter);
+    try{const b=await decObj(k,e.w);return{role:r,kek:k,dkb:b};}catch(_){}}
+  return null;
+}
+async function unlock(pw){
+  let rem=await siteGet("dati.json");
+  if(!rem)throw new Error("Il file dei dati non esiste ancora nel repository.");
+  if(rem.json.v!==2){ // vecchio formato, una sola password: è l'amministratore, converto
+    const k=await pwKey(pw,rem.json.kdf.salt,rem.json.kdf.iter); let d=null;
+    try{d=await decObj(k,rem.json.dati);}catch(_){}
+    if(d){
+      TOKEN=rem.json.token?await decObj(k,rem.json.token).catch(()=>null):null;
+      const fresh=TOKEN?await ghGet("dati.json").catch(()=>null):null;
+      if(!fresh||fresh.json.v!==2){if(fresh){rem=fresh;d=await decObj(k,fresh.json.dati);}await migrate(k,rem,d);return;}
+      rem=fresh; TOKEN=null; // già convertito da un altro dispositivo: proseguo con il nuovo formato
+    }else{ // il sito potrebbe non essere ancora aggiornato dopo la conversione
+      const fresh=await ghGet("dati.json",false).catch(()=>null);
+      if(fresh&&fresh.json.v===2)rem=fresh;else{const er=new Error("Password errata");er.code="pw";throw er;}
+    }
+  }
+  let o=await openDati(rem.json,pw);
+  if(!o){ // forse il sito non è ancora aggiornato: provo il file più recente
+    const fresh=await ghGet("dati.json",false).catch(()=>null); if(fresh&&fresh.json.v===2){rem=fresh;o=await openDati(rem.json,pw);}
+  }
+  if(!o){const er=new Error("Password errata");er.code="pw";throw er;}
+  const finish=async(f,o)=>{ROLE=o.role;DKb=o.dkb;DK=await rawKey(DKb);FILE=f;S=normalize(await decObj(DK,f.dati));
+    TOKEN=f.token?await decObj(DK,f.token).catch(()=>null):null;
+    if(o.role==="admin")AK=o.kek;
+    if(o.role==="resp"){RESPOK=null;if(f.respOk){try{RESPOK=await decObj(o.kek,f.respOk);}catch(_){}}}};
+  await finish(rem.json,o); SHA=rem.sha;
+  if(TOKEN){try{const fresh=await ghGet("dati.json");if(fresh){if(JSON.stringify(fresh.json.keys)!==JSON.stringify(rem.json.keys)){const o2=await openDati(fresh.json,pw);if(!o2){const er=new Error("Password errata");er.code="pw";throw er;}await finish(fresh.json,o2);}else await finish(fresh.json,o);SHA=fresh.sha;}}catch(e){if(e.code==="pw")throw e;}}
+  if(ROLE==="admin"){const a=TOKEN?await ghGet("admin.json").catch(()=>null):await siteGet("admin.json");ADM=normAdm(a?await decObj(AK,a.json.dati).catch(()=>null):null);ADMSHA=a&&a.sha;}
+  started();
+}
+async function migrate(k,rem,d){ // dal vecchio formato (una password) a quello con i ruoli
+  ROLE="admin"; DKb=newRawB64(); DK=await rawKey(DKb); AK=k;
+  ADM=normAdm({accessi:d.accessi||{}}); S=normalize(d);
+  FILE={formato:"gruppi-servizio-cifrato",v:2,keys:{admin:{salt:rem.json.kdf.salt,iter:rem.json.kdf.iter,w:await encObj(AK,DKb)}},respOk:null};
+  SHA=rem.sha;
+  if(TOKEN){
+    try{const cur=await ghGet("admin.json");ADMSHA=cur&&cur.sha;await saveAdm("Gruppi di servizio: dati riservati dell'amministratore");
+      await putDati("Gruppi di servizio: nuovo formato con i ruoli");}
+    catch(e){setStatus("Conversione non riuscita: "+(e.message||e),true);}
+  }
+  started();
+}
+function started(){
+  readOnly=!TOKEN; ready=true; document.body.classList.add("role-"+ROLE);
+  renderAll(); renderAccess();
+  setStatus(TOKEN?"Dati aggiornati":MSG_NOSAVE(),!TOKEN);
+  if(ROLE==="admin"){setTimeout(syncGroups,1500);loadOrders();}
+  if(ROLE==="resp"){setTimeout(syncGroups,1500);$("#navMio").classList.toggle("hidden",!RESPOK);$("#hdrRole").textContent="Responsabile dei gruppi di servizio";}
+  if(ROLE==="admin")$("#hdrRole").textContent="Amministratore";
+  setInterval(async()=>{ // controlla le modifiche degli altri
+    if(document.hidden||!TOKEN||writing||saveTimer||Date.now()-lastLocalEdit<5000||drag||document.body.classList.contains("gmode"))return;
+    try{if(await applyRemote(false))setStatus("Dati aggiornati con le modifiche di un altro fratello");}catch(e){}
+  },30000);
+}
+$("#loginForm").onsubmit=async e=>{
+  e.preventDefault(); const pw=$("#loginPw").value; if(!pw)return;
+  $("#loginErr").textContent=""; $("#loginBtn").disabled=true; $("#loginBtn").textContent="Apertura…";
+  try{
+    try{await unlock(pw);}
+    catch(err){if(err.code!=="pw")throw err; await unlockGroup(pw);} // non è amministratore né responsabile: provo i gruppi
+    $("#login").classList.add("hidden");
+  }catch(err){$("#loginErr").textContent=err.code==="pw"?"Password errata.":(err.message||"Errore di collegamento");}
+  $("#loginBtn").disabled=false; $("#loginBtn").textContent="Apri";
+};
+const MSG_NOSAVE=()=>ROLE==="admin"?"Sola lettura: collega il salvataggio da Impostazioni → Accesso e salvataggio":"Sola lettura: il salvataggio non è attivo, avvisa l'amministratore";
+const MSG_AUTH=()=>ROLE==="admin"?"Il token di GitHub è scaduto o non ha i permessi: ricollegalo da Impostazioni → Accesso e salvataggio":"Non è possibile salvare: avvisa l'amministratore";
+function renderAccess(){
+  const el=$("#accStato"); if(!el)return;
+  el.textContent=TOKEN?"Salvataggio su GitHub collegato.":"Salvataggio non collegato: per ora i dati si possono solo vedere.";
+}
+$("#btnToken").onclick=()=>{$("#tokIn").value="";$("#tokErr").textContent="";$("#dlgTok").showModal();};
+$("#tokCancel").onclick=()=>$("#dlgTok").close();
+$("#formTok").onsubmit=async e=>{
+  e.preventDefault(); const t=$("#tokIn").value.trim(); if(!t)return; $("#tokErr").textContent="Verifico…";
+  const old=TOKEN;
+  try{
+    const r=await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}`,{headers:{"Accept":"application/vnd.github+json","Authorization":"Bearer "+t}});
+    if(!r.ok)throw new Error("Token non valido o senza accesso al repository ("+r.status+")");
+    TOKEN=t;
+    const cur=await ghGet("dati.json"); SHA=cur&&cur.sha;
+    const ca=await ghGet("admin.json"); ADMSHA=ca&&ca.sha;
+    await saveAdm("Gruppi di servizio: dati riservati dell'amministratore");
+    await putDati("Gruppi di servizio: collegato il salvataggio");
+    readOnly=false; renderAccess(); $("#dlgTok").close(); setStatus("Salvataggio collegato"); for(const k in SYNC)delete SYNC[k]; syncGroups();
+  }catch(err){TOKEN=old;$("#tokErr").textContent=err.code==="auth"?"Il token non ha il permesso di scrittura (Contents: Read and write).":(err.message||String(err));}
+};
+$("#btnPw").onclick=()=>{["#pwOld","#pwNew","#pwNew2"].forEach(s=>$(s).value="");$("#pwErr").textContent="";$("#dlgPw").showModal();};
+$("#pwCancel").onclick=()=>$("#dlgPw").close();
+$("#formPw").onsubmit=async e=>{
+  e.preventDefault();
+  if(!TOKEN){$("#pwErr").textContent="Prima collega il salvataggio su GitHub.";return;}
+  const o=$("#pwOld").value,n=$("#pwNew").value,n2=$("#pwNew2").value;
+  if(n.length<10){$("#pwErr").textContent="Usa almeno 10 caratteri.";return;}
+  if(n!==n2){$("#pwErr").textContent="Le due password nuove non coincidono.";return;}
+  $("#pwErr").textContent="Controllo…";
+  try{
+    const ka=FILE.keys.admin; const kOld=await pwKey(o,ka.salt,ka.iter);
+    try{await decObj(kOld,ka.w);}catch(_){$("#pwErr").textContent="La password attuale non è corretta.";return;}
+    const salt=newSalt(); const kNew=await pwKey(n,salt,ITER);
+    AK=kNew; FILE=Object.assign({},FILE,{keys:Object.assign({},FILE.keys,{admin:{salt,iter:ITER,w:await encObj(kNew,DKb)}})});
+    await saveAdm("Gruppi di servizio: cambiata la password dell'amministratore");
+    await putDati("Gruppi di servizio: cambiata la password dell'amministratore");
+    $("#dlgPw").close(); setStatus("La tua password è cambiata. Le password del responsabile e dei gruppi restano uguali.");
+  }catch(err){$("#pwErr").textContent="Non riuscito: "+(err.message||err);}
+};
+
+/* ---------- pubblicazioni, password del responsabile e dei gruppi ---------- */
+const SITE=()=>location.origin+location.pathname;
 const PAROLE=["Ulivo","Gelso","Limone","Mandorlo","Castagno","Cipresso","Fico","Melograno","Carrubo","Pino","Quercia","Salice","Tiglio","Acero","Alloro","Mirto","Ginepro","Noce","Olmo","Faggio"];
 function genPw(){const r=n=>crypto.getRandomValues(new Uint32Array(1))[0]%n;return `${PAROLE[r(20)]}-${PAROLE[r(20)]}-${1000+r(9000)}`;}
 function fmtData(d){if(!d)return"";const x=new Date(d+"T12:00:00");return isNaN(x)?d:x.toLocaleDateString("it-IT",{day:"numeric",month:"long"});}
 function fmtOra(iso){if(!iso)return"";const x=new Date(iso);return x.toLocaleDateString("it-IT",{day:"numeric",month:"short"})+" "+x.toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});}
-
-/* ----- lato responsabile: prepara i file dei gruppi ----- */
 function groupPayload(g,i){
-  const resp=P(S.impostazioni.responsabile);
   return{gid:g.id,nome:nomeGruppo(g,i),sorvegliante:nomeP(P(g.resp)),assistente:nomeP(P(g.ass)),congregazione:S.congregazione,
-    responsabile:nomeP(resp),
     membri:membri(g).map(p=>({id:p.id,nome:nomeP(p),inatt:!!p.inatt})),
     pubblicazioni:S.pubblicazioni.filter(p=>p.aperta).map(p=>({id:p.id,titolo:p.titolo,note:p.note||"",scadenza:p.scadenza||""}))};
 }
-const SYNC={}; let syncing=false,syncAgain=false,indiceFp=null;
+// amministratore: scrive per intero il file di accesso di un gruppo (con MK e OK incartate nella password del gruppo)
+async function writeAccess(gid){
+  const g=G(gid),i=S.gruppi.indexOf(g),a=ADM.accessi[gid];
+  if(!S.mk[gid])S.mk[gid]=newRawB64(); if(!ADM.ok[gid])ADM.ok[gid]=newRawB64();
+  const gk=await pwKey(a.pw,a.salt,ITER), mk=await rawKey(S.mk[gid]);
+  const file={formato:"gruppi-servizio-gruppo",v:2,gid,kdf:{salt:a.salt,iter:ITER},wmk:await encObj(gk,S.mk[gid]),wok:await encObj(gk,ADM.ok[gid]),
+    dati:await encObj(mk,groupPayload(g,i)),token:await encObj(mk,TOKEN),aggiornato:new Date().toISOString()};
+  await ghPutFresh(`accessi/${gid}.json`,file,"Gruppi di servizio: accesso del gruppo");
+  SYNC[gid]={fp:JSON.stringify(groupPayload(g,i))+"|"+TOKEN+"|"+S.mk[gid]};
+}
+async function writeIndex(){
+  const ind=S.gruppi.filter(g=>ADM.accessi[g.id]).map(g=>({gid:g.id,salt:ADM.accessi[g.id].salt,iter:ITER}));
+  await ghPutFresh("accessi/indice.json",{formato:"gruppi-servizio-indice",v:2,gruppi:ind},"Gruppi di servizio: indice degli accessi");
+}
+// amministratore e responsabile: tengono aggiornati nomi e pubblicazioni nei file dei gruppi
+const SYNC={}; let syncing=false,syncAgain=false;
 async function syncGroups(){
-  if(MODE!=="admin"||!TOKEN)return;
+  if(!TOKEN||!(ROLE==="admin"||ROLE==="resp"))return;
   if(syncing){syncAgain=true;return;} syncing=true;
   try{
+    if(ROLE==="admin"){
+      let mod=false;
+      for(const gid of Object.keys(ADM.accessi))if(!G(gid)){await disableGroup(gid,true);mod=true;} // gruppi eliminati
+      for(const g of S.gruppi)if(ADM.accessi[g.id]&&(!S.mk[g.id]||!ADM.ok[g.id])){await writeAccess(g.id);mod=true;}
+      if(mod){await writeIndex();await saveAdm("Gruppi di servizio: accessi dei gruppi");scheduleSave(300);}
+    }
     for(const [i,g] of S.gruppi.entries()){
-      const a=S.accessi[g.id]; if(!a||!a.pw)continue;
-      const payload=groupPayload(g,i); const fp=JSON.stringify(payload)+"|"+a.salt+"|"+TOKEN;
+      const mkb=S.mk[g.id]; if(!mkb)continue;
+      const payload=groupPayload(g,i), fp=JSON.stringify(payload)+"|"+TOKEN+"|"+mkb;
       const st=SYNC[g.id]||(SYNC[g.id]={}); if(st.fp===fp)continue;
-      const path=`accessi/${g.id}.json`; const k=await gKey(a.pw,a.salt);
-      if(st.fp===undefined){ // primo controllo dopo l'apertura: il file c'è già ed è uguale?
-        const cur=await ghGet(path); st.sha=cur&&cur.sha;
-        if(cur&&cur.json.kdf&&cur.json.kdf.salt===a.salt){try{const d=await decObj(k,cur.json.dati),t=await decObj(k,cur.json.token);
-          if(JSON.stringify(d)+"|"+a.salt+"|"+t===fp){st.fp=fp;continue;}}catch(e){}}
-      }
-      const file={formato:"gruppi-servizio-gruppo",v:1,gid:g.id,kdf:{salt:a.salt,iter:ITER},dati:await encObj(k,payload),token:await encObj(k,TOKEN),aggiornato:new Date().toISOString()};
-      try{st.sha=await ghPut(path,file,st.sha,"Gruppi di servizio: dati per i sorveglianti");}
-      catch(e){if(e.code!=="conflict")throw e;const cur=await ghGet(path);st.sha=await ghPut(path,file,cur&&cur.sha,"Gruppi di servizio: dati per i sorveglianti");}
+      const path=`accessi/${g.id}.json`, cur=await ghGet(path); if(!cur)continue;
+      const mk=await rawKey(mkb);
+      try{const d=await decObj(mk,cur.json.dati),t=await decObj(mk,cur.json.token);if(JSON.stringify(d)+"|"+t+"|"+mkb===fp){st.fp=fp;continue;}}catch(_){}
+      const file=Object.assign({},cur.json,{dati:await encObj(mk,payload),token:await encObj(mk,TOKEN),aggiornato:new Date().toISOString()});
+      try{await ghPut(path,file,cur.sha,"Gruppi di servizio: elenco del gruppo");}
+      catch(e){if(e.code!=="conflict")throw e;const c2=await ghGet(path);await ghPut(path,Object.assign({},c2.json,{dati:file.dati,token:file.token}),c2.sha,"Gruppi di servizio: elenco del gruppo");}
       st.fp=fp;
     }
-    const ind=S.gruppi.filter(g=>S.accessi[g.id]&&S.accessi[g.id].pw).map(g=>({gid:g.id,salt:S.accessi[g.id].salt,iter:ITER}));
-    const ifp=JSON.stringify(ind);
-    if(ifp!==indiceFp){
-      const cur=await ghGet("accessi/indice.json"); const prima=cur&&cur.json.gruppi||[];
-      if(JSON.stringify(prima)!==ifp)await ghPut("accessi/indice.json",{formato:"gruppi-servizio-indice",v:1,gruppi:ind},cur&&cur.sha,"Gruppi di servizio: indice degli accessi");
-      // accessi tolti (gruppo eliminato o accesso disattivato): cancella i loro file
-      for(const e of prima)if(!ind.some(x=>x.gid===e.gid)){await ghDel(`accessi/${e.gid}.json`,"Gruppi di servizio: accesso disattivato");await ghDel(`ordini/${e.gid}.json`,"Gruppi di servizio: accesso disattivato");delete SYNC[e.gid];}
-      indiceFp=ifp;
-    }
-  }catch(e){console.warn(e);setStatus("Non sono riuscito ad aggiornare i dati per i sorveglianti: riprovo al prossimo salvataggio.",true);}
+  }catch(e){console.warn(e);setStatus("Non sono riuscito ad aggiornare gli elenchi dei sorveglianti: riprovo al prossimo salvataggio.",true);}
   syncing=false; if(syncAgain){syncAgain=false;syncGroups();}
+}
+async function disableGroup(gid,quiet){
+  await ghDel(`accessi/${gid}.json`,"Gruppi di servizio: accesso del gruppo disattivato");
+  await ghDel(`ordini/${gid}.json`,"Gruppi di servizio: accesso del gruppo disattivato");
+  delete ADM.accessi[gid]; delete ADM.ok[gid]; delete S.mk[gid]; delete SYNC[gid];
+  if(!quiet){await writeIndex();await saveAdm("Gruppi di servizio: accesso del gruppo disattivato");changed();}
+}
+// la chiave di dati.json cambia ogni volta che cambia l'accesso del responsabile: chi aveva la vecchia password non legge più
+async function rotateDK(respPw){
+  DKb=newRawB64(); DK=await rawKey(DKb);
+  const keys={admin:{salt:FILE.keys.admin.salt,iter:FILE.keys.admin.iter,w:await encObj(AK,DKb)}};
+  if(respPw){const salt=newSalt();keys.resp={salt,iter:ITER,w:await encObj(await pwKey(respPw,salt,ITER),DKb)};ADM.resp={pw:respPw,salt};}
+  else ADM.resp=null;
+  FILE=Object.assign({},FILE,{keys});
+  await saveAdm("Gruppi di servizio: accesso del responsabile");
+  const cur=await ghGet("dati.json"); SHA=cur&&cur.sha;
+  await putDati("Gruppi di servizio: accesso del responsabile");
 }
 let ORD={}, ordLoaded=false, ordLoading=false;
 async function loadOrders(){
-  if(MODE!=="admin"||!TOKEN||ordLoading)return; ordLoading=true;
+  if(ROLE!=="admin"||!TOKEN||ordLoading)return; ordLoading=true;
   try{
     const out={};
-    await Promise.all(S.gruppi.map(async g=>{const a=S.accessi[g.id];if(!a||!a.pw)return;
+    await Promise.all(S.gruppi.map(async g=>{const okb=ADM.ok[g.id];if(!ADM.accessi[g.id]||!okb)return;
       const cur=await ghGet(`ordini/${g.id}.json`); if(!cur)return;
-      try{if(cur.json.kdf.salt!==a.salt)return;out[g.id]=await decObj(await gKey(a.pw,a.salt),cur.json.dati);}catch(e){}}));
+      try{out[g.id]=await decObj(await rawKey(okb),cur.json.dati);}catch(e){}}));
     ORD=out; ordLoaded=true;
   }catch(e){console.warn(e);}
   ordLoading=false; if(!$("#tab-pub").classList.contains("hidden"))renderPubs();
@@ -557,14 +639,13 @@ async function loadOrders(){
 function richieste(gid,pubId){const o=ORD[gid];const m=o&&o.ordini&&o.ordini[pubId]||{};return Object.entries(m).filter(([,q])=>q>0);}
 function totGruppo(gid,pubId){return richieste(gid,pubId).reduce((s,[,q])=>s+q,0);}
 function totPub(pubId){return S.gruppi.reduce((s,g)=>s+totGruppo(g.id,pubId),0);}
-function nomeId(gid,pid){const p=P(pid);if(p)return nomeP(p);return "(non più nell'elenco)";}
+function nomeId(pid){const p=P(pid);return p?nomeP(p):"(non più nell'elenco)";}
 
-/* ----- pagina Pubblicazioni (responsabile) ----- */
+/* ----- pagina Pubblicazioni (amministratore) ----- */
 const openDet=new Set(), openSend=new Set();
 function renderPubs(){
-  const el=$("#pubList"); if(!el)return;
+  const el=$("#pubList"); if(!el||ROLE!=="admin")return;
   if(!S.pubblicazioni.length){el.innerHTML='<div class="empty list">Nessuna pubblicazione. Tocca “+ Nuova pubblicazione” per aggiungere quella da ordinare.</div>';return;}
-  const conAccesso=S.gruppi.filter(g=>S.accessi[g.id]&&S.accessi[g.id].pw);
   el.innerHTML=S.pubblicazioni.slice().reverse().map(pb=>{
     const tot=totPub(pb.id); const risp=S.gruppi.filter(g=>ORD[g.id]&&ORD[g.id].ordini&&ORD[g.id].ordini[pb.id]).length;
     let h=`<div class="pcard" data-pub="${pb.id}"><div class="phead"><div><h3>${esc(pb.titolo)}</h3>
@@ -575,27 +656,26 @@ function renderPubs(){
       <div class="toolbar" style="margin:10px 0 0">
         <button class="btn ghost" data-pa="det">${openDet.has(pb.id)?"Nascondi dettaglio":"Dettaglio per gruppo"}</button>
         ${pb.aperta?`<button class="btn ghost" data-pa="send">Invia ai sorveglianti</button>`:""}
-        ${pb.aperta&&mioGruppo()?`<button class="btn" data-pa="fill" data-g="${mioGruppo().id}">Segna per il mio gruppo</button>`:""}
         <button class="btn ghost" data-pa="edit">Modifica</button>
         <button class="btn ghost" data-pa="toggle">${pb.aperta?"Chiudi":"Riapri"}</button>
         <button class="btn danger" data-pa="del">Elimina</button></div>`;
     if(openSend.has(pb.id)&&pb.aperta){
       h+=`<div class="pbox"><p class="hint">Tocca un gruppo: si apre WhatsApp con il messaggio già scritto, con l'indirizzo del sito e la password del gruppo.</p>`;
-      h+=S.gruppi.map((g,i)=>{const a=S.accessi[g.id];const sv=nomeP(P(g.resp))||"sorvegliante non indicato";
-        if(!a||!a.pw)return `<div class="srow"><span><b>${esc(nomeGruppo(g,i))}</b> · ${esc(sv)}</span><span class="hint">Crea prima la password in Impostazioni</span></div>`;
-        return `<div class="srow"><span><b>${esc(nomeGruppo(g,i))}</b> · ${esc(sv)}</span><a class="btn wa" target="_blank" rel="noopener" href="${esc(waLink(g,pb))}">Invia su WhatsApp</a></div>`;}).join("");
+      h+=S.gruppi.map((g,i)=>{const a=ADM.accessi[g.id];const sv=nomeP(P(g.resp))||"sorvegliante non indicato";
+        if(!a)return `<div class="srow"><span><b>${esc(nomeGruppo(g,i))}</b> · ${esc(sv)}</span><span class="hint">Crea prima la password in Impostazioni</span></div>`;
+        return `<div class="srow"><span><b>${esc(nomeGruppo(g,i))}</b> · ${esc(sv)}</span><a class="btn wa" target="_blank" rel="noopener" href="${esc(waGroup(g,pb))}">Invia su WhatsApp</a></div>`;}).join("");
       h+=`</div>`;
     }
     if(openDet.has(pb.id)){
       h+=`<div class="pbox">`;
-      h+=S.gruppi.map((g,i)=>{const o=ORD[g.id];const r=richieste(g.id,pb.id).sort((a,b)=>nomeId(g.id,a[0]).localeCompare(nomeId(g.id,b[0]),"it"));
+      h+=S.gruppi.map((g,i)=>{const o=ORD[g.id];const r=richieste(g.id,pb.id).sort((a,b)=>nomeId(a[0]).localeCompare(nomeId(b[0]),"it"));
         const nota=o&&o.note&&o.note[pb.id];
         let s=`<div class="dgrp"><div class="dgh"><b>${esc(nomeGruppo(g,i))}</b> · Sorv. ${esc(nomeP(P(g.resp))||"—")}<span class="dtot">${totGruppo(g.id,pb.id)}</span></div>`;
-        if(S.accessi[g.id]&&pb.aperta)s+=`<button class="btn ghost small" style="margin:6px 0" data-pa="fill" data-g="${g.id}">Segna o correggi le richieste di questo gruppo</button>`;
-        if(!S.accessi[g.id])s+=`<div class="hint">Il gruppo non ha ancora la password: crearla in Impostazioni.</div>`;
+        if(ADM.accessi[g.id]&&pb.aperta)s+=`<button class="btn ghost small" style="margin:6px 0" data-pa="fill" data-g="${g.id}">Segna o correggi le richieste di questo gruppo</button>`;
+        if(!ADM.accessi[g.id])s+=`<div class="hint">Il gruppo non ha ancora la password: crearla in Impostazioni.</div>`;
         else if(!o||!o.ordini||!o.ordini[pb.id])s+=`<div class="hint">Nessuna risposta per ora.</div>`;
         else if(!r.length)s+=`<div class="hint">Nessuno del gruppo ha chiesto copie.</div>`;
-        s+=r.map(([pid,q])=>`<div class="drow"><span>${esc(nomeId(g.id,pid))}</span><b>${q}</b></div>`).join("");
+        s+=r.map(([pid,q])=>`<div class="drow"><span>${esc(nomeId(pid))}</span><b>${q}</b></div>`).join("");
         if(nota)s+=`<div class="pnote">Nota: ${esc(nota)}</div>`;
         if(o&&o.aggiornato&&o.ordini&&o.ordini[pb.id])s+=`<div class="hint">Aggiornato il ${esc(fmtOra(o.aggiornato))}</div>`;
         return s+`</div>`;}).join("");
@@ -604,17 +684,20 @@ function renderPubs(){
     return h+`</div>`;
   }).join("");
 }
-function waLink(g,pb){
-  const a=S.accessi[g.id]; const r=P(g.resp); const tel=(a.tel||"").replace(/[^\d]/g,"");
-  const t=`Caro fratello${r?" "+(r.nome||r.cognome):""}, è da ordinare la pubblicazione *${pb.titolo}*.`+
-    (pb.scadenza?` Segna le richieste entro il ${fmtData(pb.scadenza)}.`:"")+
-    `\nChiedi ai fratelli del tuo gruppo chi la desidera e quante copie, poi segnalo qui:\n${SITE()}\nPassword del ${nomeGruppo(g,S.gruppi.indexOf(g))}: ${a.pw}`;
-  return `https://wa.me/${tel}?text=${encodeURIComponent(t)}`;
+function waUrl(tel,t){return `https://wa.me/${(tel||"").replace(/[^\d]/g,"")}?text=${encodeURIComponent(t)}`;}
+function waGroup(g,pb){
+  const a=ADM.accessi[g.id], r=P(g.resp);
+  const t=`Caro fratello${r?" "+(r.nome||r.cognome):""}, `+(pb?`è da ordinare la pubblicazione *${pb.titolo}*.`+(pb.scadenza?` Segna le richieste entro il ${fmtData(pb.scadenza)}.`:"")+
+    `\nChiedi ai fratelli del tuo gruppo chi la desidera e quante copie, poi segnalo qui:`:`ecco l'accesso per segnare gli ordini delle pubblicazioni del tuo gruppo:`)+
+    `\n${SITE()}\nPassword del ${nomeGruppo(g,S.gruppi.indexOf(g))}: ${a.pw}`;
+  return waUrl(a.tel,t);
 }
+function waResp(){const p=P(S.impostazioni.responsabile);
+  return waUrl(ADM.resp&&ADM.resp.tel,`Caro fratello${p?" "+(p.nome||p.cognome):""}, ecco l'accesso per gestire i gruppi di servizio (assegnare i fratelli ai gruppi e stampare il programma):\n${SITE()}\nLa tua password: ${ADM.resp.pw}`);}
 function riepilogo(pb){
   const L=[`${pb.titolo}`,`Totale da ordinare: ${totPub(pb.id)} copie`,""];
   S.gruppi.forEach((g,i)=>{const r=richieste(g.id,pb.id);L.push(`${nomeGruppo(g,i)} (Sorv. ${nomeP(P(g.resp))||"—"}): ${totGruppo(g.id,pb.id)}`);
-    r.forEach(([pid,q])=>L.push(`  - ${nomeId(g.id,pid)}: ${q}`));});
+    r.forEach(([pid,q])=>L.push(`  - ${nomeId(pid)}: ${q}`));});
   return L.join("\n");
 }
 $("#pubList").addEventListener("click",async e=>{
@@ -623,27 +706,12 @@ $("#pubList").addEventListener("click",async e=>{
   if(a==="det"){openDet.has(pb.id)?openDet.delete(pb.id):openDet.add(pb.id);renderPubs();}
   if(a==="send"){openSend.has(pb.id)?openSend.delete(pb.id):openSend.add(pb.id);renderPubs();}
   if(a==="edit")openPub(pb);
-  if(a==="fill"){b.disabled=true;b.textContent="Apro…";openGroupAsAdmin(b.dataset.g).catch(err=>{setStatus("Non riuscito: "+(err.message||err),true);renderPubs();});}
+  if(a==="fill"){b.disabled=true;b.textContent="Apro…";openGroupInside(b.dataset.g,ADM.ok[b.dataset.g]).catch(err=>{setStatus("Non riuscito: "+(err.message||err),true);renderPubs();});}
   if(a==="toggle"){pb.aperta=!pb.aperta;changed();}
   if(a==="del")confirmDlg("Eliminare “"+pb.titolo+"”?","Le richieste già segnate per questa pubblicazione non saranno più visibili.",()=>{S.pubblicazioni=S.pubblicazioni.filter(x=>x!==pb);changed();});
   if(a==="copy"){const t=riepilogo(pb);const out=card.querySelector("[data-copied]");
     try{await navigator.clipboard.writeText(t);out.textContent="Copiato.";}catch(_){out.textContent="";const ta=document.createElement("textarea");ta.value=t;ta.style.cssText="width:100%;height:160px";card.querySelector(".pbox:last-child").appendChild(ta);ta.select();}}
 });
-// il gruppo del responsabile (se è anche sorvegliante o assistente, o comunque ne fa parte)
-function mioGruppo(){const r=P(S.impostazioni.responsabile);const g=r&&G(r.gruppo);return g&&S.accessi[g.id]?g:null;}
-// il responsabile apre la pagina degli ordini di un gruppo, come la vede il sorvegliante
-async function openGroupAsAdmin(gid){
-  const g=G(gid),i=S.gruppi.indexOf(g),a=S.accessi[gid]; const key=await gKey(a.pw,a.salt);
-  GRP={gid,key,salt:a.salt,payload:groupPayload(g,i),ord:normOrd(null),ordSha:null,edits:{},noteEdits:{},admin:true};
-  const o=await ghGet(`ordini/${gid}.json`); if(o&&o.json.kdf.salt===a.salt){GRP.ord=normOrd(await decObj(key,o.json.dati));GRP.ordSha=o.sha;}
-  document.body.classList.add("gmode"); $("#gBack").classList.remove("hidden"); gStatus(""); renderG(); window.scrollTo(0,0);
-}
-$("#gBack").onclick=async()=>{
-  if(gTimer){clearTimeout(gTimer);gTimer=null;await gFlush();}
-  while(gWriting)await new Promise(r=>setTimeout(r,200));
-  GRP=null; document.body.classList.remove("gmode"); $("#gBack").classList.add("hidden"); window.scrollTo(0,0);
-  ordLoaded=false; renderPubs(); await loadOrders();
-};
 let editPub=null;
 function openPub(pb){editPub=pb||null;$("#dlgPubTitle").textContent=pb?"Modifica pubblicazione":"Nuova pubblicazione";
   $("#pbTitolo").value=pb?pb.titolo:"";$("#pbNote").value=pb?pb.note||"":"";$("#pbScad").value=pb?pb.scadenza||"":"";$("#pbErr").textContent="";$("#dlgPub").showModal();setTimeout(()=>$("#pbTitolo").focus(),50);}
@@ -654,51 +722,68 @@ $("#formPub").onsubmit=e=>{e.preventDefault();const t=$("#pbTitolo").value.trim(
   const v={titolo:t,note:$("#pbNote").value.trim(),scadenza:$("#pbScad").value};
   if(editPub)Object.assign(editPub,v);else{const pb=Object.assign({id:uid(),aperta:true,creata:new Date().toISOString()},v);S.pubblicazioni.push(pb);openSend.add(pb.id);}
   $("#dlgPub").close();changed();
-  if(!editPub&&S.gruppi.some(g=>!S.accessi[g.id]))setStatus("Alcuni gruppi non hanno ancora la password: creala in Impostazioni prima di inviare.",true);};
+  if(!editPub&&S.gruppi.some(g=>!ADM.accessi[g.id]))setStatus("Alcuni gruppi non hanno ancora la password: creala in Impostazioni prima di inviare.",true);};
 
-/* ----- pagina Impostazioni (responsabile) ----- */
+/* ----- pagina Impostazioni (amministratore) ----- */
 const showPw=new Set();
 function renderImp(){
-  const el=$("#impResp"); if(!el)return;
+  const el=$("#impResp"); if(!el||ROLE!=="admin")return;
   const anz=S.persone.filter(p=>p.anz).sort(cmpP);
   el.innerHTML='<option value="">— Scegli un anziano —</option>'+anz.map(p=>`<option value="${p.id}"${S.impostazioni.responsabile===p.id?" selected":""}>${esc(nomeP(p))}</option>`).join("");
-  $("#impAcc").innerHTML=S.gruppi.map((g,i)=>{const a=S.accessi[g.id];
+  const r=ADM.resp, rp=P(S.impostazioni.responsabile), rg=rp&&G(rp.gruppo);
+  $("#impRespAcc").innerHTML=!rp?`<p class="hint">Scegli prima il responsabile.</p>`:r?
+    `<div class="apw"><span>Password del responsabile:</span> <code>${showPw.has("resp")?esc(r.pw):"••••••••••"}</code> <button class="btn ghost small" data-ra="show">${showPw.has("resp")?"Nascondi":"Mostra"}</button></div>
+     <label class="field">WhatsApp del responsabile (facoltativo)<input data-ra="tel" inputmode="tel" placeholder="es. 393331234567" value="${esc(r.tel||"")}"></label>
+     <p class="hint">${rg&&ADM.accessi[rg.id]?`Con questa password vede anche gli ordini del suo gruppo (${esc(nomeGruppo(rg,S.gruppi.indexOf(rg)))}).`:`Per fargli vedere gli ordini del suo gruppo, crea la password del suo gruppo qui sotto.`}</p>
+     <div class="toolbar" style="margin:8px 0 0"><a class="btn wa small" target="_blank" rel="noopener" href="${esc(waResp())}">Invia l'accesso su WhatsApp</a><button class="btn ghost small" data-ra="new">Cambia password</button><button class="btn danger small" data-ra="off">Disattiva accesso</button></div>`
+    :`<p class="hint">Il responsabile non ha ancora una password.</p><button class="btn small" data-ra="new">Crea password del responsabile</button>`;
+  $("#impAcc").innerHTML=S.gruppi.map((g,i)=>{const a=ADM.accessi[g.id];
     return `<div class="acard" data-g="${g.id}"><div class="ahead"><b>${esc(nomeGruppo(g,i))}</b><span class="hint">Sorv. ${esc(nomeP(P(g.resp))||"—")} · Ass. ${esc(nomeP(P(g.ass))||"—")}</span></div>
-      ${a&&a.pw?`<div class="apw"><span>Password del gruppo:</span> <code>${showPw.has(g.id)?esc(a.pw):"••••••••••"}</code> <button class="btn ghost small" data-ia="show">${showPw.has(g.id)?"Nascondi":"Mostra"}</button></div>
+      ${a?`<div class="apw"><span>Password del gruppo:</span> <code>${showPw.has(g.id)?esc(a.pw):"••••••••••"}</code> <button class="btn ghost small" data-ia="show">${showPw.has(g.id)?"Nascondi":"Mostra"}</button></div>
         <label class="field">WhatsApp del sorvegliante (facoltativo)<input data-ia="tel" inputmode="tel" placeholder="es. 393331234567" value="${esc(a.tel||"")}"></label>
-        <div class="toolbar" style="margin:8px 0 0"><button class="btn ghost small" data-ia="new">Cambia password</button><button class="btn danger small" data-ia="off">Disattiva accesso</button></div>`
+        <div class="toolbar" style="margin:8px 0 0"><a class="btn wa small" target="_blank" rel="noopener" href="${esc(waGroup(g,null))}">Invia l'accesso su WhatsApp</a><button class="btn ghost small" data-ia="new">Cambia password</button><button class="btn danger small" data-ia="off">Disattiva accesso</button></div>`
       :`<p class="hint">Il gruppo non ha ancora una password: il sorvegliante non può segnare le richieste.</p><button class="btn small" data-ia="new">Crea password del gruppo</button>`}
     </div>`;}).join("")||'<p class="hint">Crea prima i gruppi.</p>';
   renderAccess();
 }
-$("#impResp").onchange=e=>{S.impostazioni.responsabile=e.target.value;changed();};
-$("#impAcc").addEventListener("change",e=>{if(e.target.dataset.ia!=="tel")return;const gid=e.target.closest("[data-g]").dataset.g;S.accessi[gid].tel=e.target.value.trim();changed();});
-$("#impAcc").addEventListener("click",async e=>{
-  const b=e.target.closest("[data-ia]"); if(!b||b.tagName==="INPUT")return; const gid=b.closest("[data-g]").dataset.g; const a=S.accessi[gid];
-  if(b.dataset.ia==="show"){showPw.has(gid)?showPw.delete(gid):showPw.add(gid);renderImp();}
+async function busy(b,fn){b.disabled=true;const t=b.textContent;b.textContent="Attendi…";try{await fn();}catch(err){setStatus("Non riuscito: "+(err.message||err),true);}b.disabled=false;b.textContent=t;renderImp();}
+$("#impResp").onchange=e=>{
+  const prima=S.impostazioni.responsabile; S.impostazioni.responsabile=e.target.value; changed();
+  if(ADM.resp&&prima&&prima!==e.target.value)setStatus("Hai cambiato responsabile: crea una nuova password del responsabile, così il precedente non può più entrare.",true);
+};
+$("#impRespAcc").addEventListener("change",e=>{if(e.target.dataset.ra!=="tel")return;ADM.resp.tel=e.target.value.trim();saveAdm("Gruppi di servizio: telefono del responsabile").catch(()=>{});renderImp();});
+$("#impRespAcc").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-ra]"); if(!b)return;
+  if(!TOKEN&&b.dataset.ra!=="show"){setStatus("Prima collega il salvataggio su GitHub (qui sotto).",true);return;}
+  if(b.dataset.ra==="show"){showPw.has("resp")?showPw.delete("resp"):showPw.add("resp");renderImp();}
+  if(b.dataset.ra==="new"){const fai=()=>busy(b,async()=>{const tel=ADM.resp&&ADM.resp.tel;await rotateDK(genPw());ADM.resp.tel=tel||"";await saveAdm("Gruppi di servizio: accesso del responsabile");showPw.add("resp");setStatus("Password del responsabile pronta: inviagliela con WhatsApp.");});
+    ADM.resp?confirmDlg("Cambiare la password del responsabile?","La vecchia password non funzionerà più.",fai):fai();}
+  if(b.dataset.ra==="off")confirmDlg("Disattivare l'accesso del responsabile?","Non potrà più entrare finché non crei una nuova password.",()=>busy(b,async()=>{await rotateDK(null);setStatus("Accesso del responsabile disattivato.");}));
+});
+$("#impAcc").addEventListener("change",e=>{if(e.target.dataset.ia!=="tel")return;const gid=e.target.closest("[data-g]").dataset.g;ADM.accessi[gid].tel=e.target.value.trim();saveAdm("Gruppi di servizio: telefono del sorvegliante").catch(()=>{});renderImp();});
+$("#impAcc").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-ia]"); if(!b)return; const gid=b.closest("[data-g]").dataset.g; const a=ADM.accessi[gid];
+  if(b.dataset.ia==="show"){showPw.has(gid)?showPw.delete(gid):showPw.add(gid);renderImp();return;}
+  if(!TOKEN){setStatus("Prima collega il salvataggio su GitHub (qui sotto).",true);return;}
   if(b.dataset.ia==="new"){
-    if(!TOKEN){setStatus("Prima collega il salvataggio su GitHub (qui sotto).",true);return;}
-    const fai=async()=>{b.disabled=true;b.textContent="Attendi…";
-      try{const pw=genPw(),salt=toB64(crypto.getRandomValues(new Uint8Array(16)));
-        if(a&&a.pw){ // le richieste già segnate vengono ri-cifrate con la nuova password
-          const cur=await ghGet(`ordini/${gid}.json`);
-          if(cur){const d=await decObj(await gKey(a.pw,a.salt),cur.json.dati);await ghPut(`ordini/${gid}.json`,Object.assign({},cur.json,{kdf:{salt,iter:ITER},dati:await encObj(await gKey(pw,salt),d)}),cur.sha,"Gruppi di servizio: nuova password del gruppo");}}
-        S.accessi[gid]=Object.assign({tel:""},a,{pw,salt}); showPw.add(gid); changed();
-      }catch(err){setStatus("Non riuscito: "+(err.message||err),true);renderImp();}};
-    if(a&&a.pw)confirmDlg("Cambiare la password del gruppo?","La vecchia password non funzionerà più: dovrai mandare quella nuova al sorvegliante e all'assistente.",fai);else fai();
+    const fai=()=>busy(b,async()=>{ // le chiavi del gruppo restano: le richieste già segnate non si perdono
+      ADM.accessi[gid]=Object.assign({tel:""},a,{pw:genPw(),salt:newSalt()});
+      await writeAccess(gid); await writeIndex(); await saveAdm("Gruppi di servizio: password del gruppo"); showPw.add(gid); changed();});
+    a?confirmDlg("Cambiare la password del gruppo?","La vecchia password non funzionerà più: dovrai mandare quella nuova al sorvegliante e all'assistente.",fai):fai();
   }
-  if(b.dataset.ia==="off")confirmDlg("Disattivare l'accesso del gruppo?","Il sorvegliante non potrà più entrare e le richieste già segnate dal gruppo verranno cancellate.",()=>{delete S.accessi[gid];showPw.delete(gid);changed();});
+  if(b.dataset.ia==="off")confirmDlg("Disattivare l'accesso del gruppo?","Il sorvegliante non potrà più entrare e le richieste già segnate dal gruppo verranno cancellate.",()=>busy(b,()=>disableGroup(gid)));
 });
 
-/* ----- lato sorvegliante: vista del solo gruppo ----- */
+/* ----- pagina degli ordini di un gruppo ----- */
 let GRP=null, gTimer=null, gWriting=false, gAgain=false;
 async function tryIndex(ind,pw,api){
   if(!ind||!ind.json||!Array.isArray(ind.json.gruppi))return null;
   for(const e of ind.json.gruppi){
     const f=api?await ghGet(`accessi/${e.gid}.json`,false).catch(()=>null):await siteGet(`accessi/${e.gid}.json`);
-    if(!f||!f.json.kdf||f.json.kdf.salt!==e.salt)continue;
-    const k=await deriveKey(pw,fromB64(e.salt),e.iter||ITER);
-    try{const d=await decObj(k,f.json.dati);return{gid:e.gid,key:k,salt:e.salt,payload:d,file:f.json};}catch(_){}
+    if(!f||!f.json.kdf||f.json.kdf.salt!==e.salt||!f.json.wmk)continue;
+    const k=await pwKey(pw,e.salt,e.iter||ITER);
+    try{const mkb=await decObj(k,f.json.wmk),okb=await decObj(k,f.json.wok);const mk=await rawKey(mkb);
+      return{gid:e.gid,salt:e.salt,mk,ok:await rawKey(okb),payload:await decObj(mk,f.json.dati),token:await decObj(mk,f.json.token).catch(()=>null)};}catch(_){}
   }
   return null;
 }
@@ -706,20 +791,33 @@ async function unlockGroup(pw){
   let hit=await tryIndex(await siteGet("accessi/indice.json"),pw,false);
   if(!hit)hit=await tryIndex(await ghGet("accessi/indice.json",false).catch(()=>null),pw,true); // password appena creata: il sito non è ancora aggiornato
   if(!hit){const er=new Error("Password errata");er.code="pw";throw er;}
-  TOKEN=await decObj(hit.key,hit.file.token).catch(()=>null);
-  GRP={gid:hit.gid,key:hit.key,salt:hit.salt,payload:hit.payload,ord:{ordini:{},note:{}},ordSha:null,edits:{},noteEdits:{}};
-  MODE="gruppo"; document.body.classList.add("gmode");
-  await gRefresh(true); renderG();
+  TOKEN=hit.token; ROLE="gruppo";
+  GRP={gid:hit.gid,salt:hit.salt,mk:hit.mk,ok:hit.ok,payload:hit.payload,ord:normOrd(null),ordSha:null,edits:{},noteEdits:{}};
+  document.body.classList.add("gmode"); await gRefresh(true); renderG();
   setInterval(()=>{if(!document.hidden&&!gTimer&&!gWriting)gRefresh(false).then(ch=>{if(ch)renderG();});},30000);
 }
+// amministratore (qualsiasi gruppo) o responsabile (solo il suo): apre la pagina degli ordini del gruppo
+async function openGroupInside(gid,okb){
+  const g=G(gid),i=S.gruppi.indexOf(g);
+  GRP={gid,salt:null,mk:await rawKey(S.mk[gid]),ok:await rawKey(okb),payload:groupPayload(g,i),ord:normOrd(null),ordSha:null,edits:{},noteEdits:{},inside:true};
+  await gRefresh(true); document.body.classList.add("gmode"); $("#gBack").classList.remove("hidden"); gStatus(""); renderG(); window.scrollTo(0,0);
+}
+$("#gBack").onclick=async()=>{
+  if(gTimer){clearTimeout(gTimer);gTimer=null;await gFlush();}
+  while(gWriting)await new Promise(r=>setTimeout(r,200));
+  GRP=null; document.body.classList.remove("gmode"); $("#gBack").classList.add("hidden"); window.scrollTo(0,0);
+  if(ROLE==="admin"){ordLoaded=false;renderPubs();await loadOrders();}
+};
 async function gRefresh(first){
   if(!TOKEN)return false; let ch=false;
   try{
-    const acc=await ghGet(`accessi/${GRP.gid}.json`);
-    if(!acc||acc.json.kdf.salt!==GRP.salt){if(!first){gStatus("La password del gruppo è cambiata: chiedila al responsabile e rientra.",true);setTimeout(()=>location.reload(),4000);}return false;}
-    const d=await decObj(GRP.key,acc.json.dati); if(JSON.stringify(d)!==JSON.stringify(GRP.payload)){GRP.payload=d;ch=true;}
+    if(!GRP.inside){
+      const acc=await ghGet(`accessi/${GRP.gid}.json`);
+      if(!acc||acc.json.kdf.salt!==GRP.salt){if(!first){gStatus("La password del gruppo è cambiata: chiedi quella nuova e rientra.",true);setTimeout(()=>location.reload(),4000);}return false;}
+      const d=await decObj(GRP.mk,acc.json.dati); if(JSON.stringify(d)!==JSON.stringify(GRP.payload)){GRP.payload=d;ch=true;}
+    }
     const o=await ghGet(`ordini/${GRP.gid}.json`);
-    if(o&&o.sha!==GRP.ordSha&&o.json.kdf.salt===GRP.salt){GRP.ord=normOrd(await decObj(GRP.key,o.json.dati));GRP.ordSha=o.sha;ch=true;}
+    if(o&&o.sha!==GRP.ordSha){try{GRP.ord=normOrd(await decObj(GRP.ok,o.json.dati));GRP.ordSha=o.sha;ch=true;}catch(_){}}
   }catch(e){console.warn(e);}
   return ch;
 }
@@ -729,8 +827,8 @@ function renderG(){
   const d=GRP.payload;
   $("#gTitle").textContent=d.nome+(d.sorvegliante?" · Sorv. "+d.sorvegliante:"");
   $("#gCong").textContent=d.congregazione||"";
-  $("#gFoot").textContent=GRP.admin?"Stai segnando le richieste di questo gruppo come responsabile: il sorvegliante le vede uguali.":d.responsabile?`Per qualsiasi problema rivolgiti a ${d.responsabile}.`:"";
-  if(!TOKEN)gStatus("Il salvataggio non è attivo: avvisa il responsabile dei gruppi.",true);
+  $("#gFoot").textContent=GRP.inside?(ROLE==="admin"?"Stai segnando le richieste di questo gruppo come amministratore: il sorvegliante le vede uguali.":"Sono gli ordini del tuo gruppo: il sorvegliante e l'assistente li vedono uguali."):"";
+  if(!TOKEN)gStatus("Il salvataggio non è attivo: avvisa chi ti ha mandato il link.",true);
   const att=d.membri.filter(m=>!m.inatt), ina=d.membri.filter(m=>m.inatt);
   if(!d.pubblicazioni.length){$("#gList").innerHTML='<div class="empty list">Al momento non ci sono pubblicazioni da ordinare.</div>';return;}
   const riga=(pb,m)=>{const q=(GRP.ord.ordini[pb.id]||{})[m.id]||0;
@@ -741,7 +839,7 @@ function renderG(){
       <p class="hint">Segna quante copie desidera ogni fratello. Lascia vuoto chi non la vuole.</p>
       <div class="glist">${att.map(x=>riga(pb,x)).join("")}${ina.length?`<div class="gsep">Inattivi</div>`+ina.map(x=>riga(pb,x)).join(""):""}</div>
       <div class="gtot">Totale del gruppo: <b data-tot>${tot}</b> copie</div>
-      <label class="field">Note per il responsabile (facoltativo)<textarea data-note rows="2" placeholder="es. 2 copie per persone interessate">${esc(GRP.ord.note[pb.id]||"")}</textarea></label>
+      <label class="field">Note (facoltativo)<textarea data-note rows="2" placeholder="es. 2 copie per persone interessate">${esc(GRP.ord.note[pb.id]||"")}</textarea></label>
     </div>`;}).join("");
 }
 function setQ(pubId,pid,q,card){
@@ -758,23 +856,23 @@ $("#gList").addEventListener("click",e=>{const b=e.target.closest("[data-st]");i
 $("#gList").addEventListener("input",e=>{const card=e.target.closest("[data-pub]");if(!card)return;
   if(e.target.hasAttribute("data-q"))setQ(card.dataset.pub,e.target.dataset.pid,e.target.value,card);
   if(e.target.hasAttribute("data-note")){GRP.ord.note[card.dataset.pub]=e.target.value;GRP.noteEdits[card.dataset.pub]=e.target.value;gSave();}});
-function gSave(){if(!TOKEN){gStatus("Il salvataggio non è attivo: avvisa il responsabile dei gruppi.",true);return;}
+function gSave(){if(!TOKEN){gStatus("Il salvataggio non è attivo: avvisa chi ti ha mandato il link.",true);return;}
   gStatus("Salvataggio…");clearTimeout(gTimer);gTimer=setTimeout(()=>{gTimer=null;gFlush();},1200);}
 async function gFlush(){
   if(gWriting){gAgain=true;return;} gWriting=true;
   const path=`ordini/${GRP.gid}.json`;
-  const mk=async o=>({formato:"gruppi-servizio-ordini",v:1,gid:GRP.gid,kdf:{salt:GRP.salt,iter:ITER},dati:await encObj(GRP.key,Object.assign({},o,{aggiornato:new Date().toISOString()})),aggiornato:new Date().toISOString()});
+  const mk=async o=>({formato:"gruppi-servizio-ordini",v:2,gid:GRP.gid,dati:await encObj(GRP.ok,Object.assign({},o,{aggiornato:new Date().toISOString()})),aggiornato:new Date().toISOString()});
   try{
     try{GRP.ordSha=await ghPut(path,await mk(GRP.ord),GRP.ordSha,"Gruppi di servizio: richieste del gruppo");}
     catch(e){if(e.code!=="conflict")throw e;
-      // nel frattempo ha salvato anche l'altro (sorvegliante o assistente): unisco le modifiche
-      const cur=await ghGet(path); const rem=normOrd(cur?await decObj(GRP.key,cur.json.dati):null);
+      // nel frattempo ha salvato anche un altro (sorvegliante, assistente o amministratore): unisco le modifiche
+      const cur=await ghGet(path); let rem=normOrd(null); if(cur){try{rem=normOrd(await decObj(GRP.ok,cur.json.dati));}catch(_){}}
       for(const [k,q] of Object.entries(GRP.edits)){const [pb,pid]=k.split("|");const m=rem.ordini[pb]||(rem.ordini[pb]={});if(q)m[pid]=q;else delete m[pid];}
       for(const [pb,t] of Object.entries(GRP.noteEdits))rem.note[pb]=t;
       GRP.ord=rem; GRP.ordSha=await ghPut(path,await mk(rem),cur&&cur.sha,"Gruppi di servizio: richieste del gruppo"); renderG();}
-    GRP.edits={}; GRP.noteEdits={}; gStatus("Salvato. Il responsabile vede subito le richieste.");
-  }catch(e){gStatus(e.code==="auth"?"Non è possibile salvare: avvisa il responsabile dei gruppi.":"Salvataggio non riuscito (connessione?). Riprovo…",true);
-    if(e.code!=="auth")setTimeout(()=>{if(!gTimer&&!gWriting)gFlush();},5000);}
+    GRP.edits={}; GRP.noteEdits={}; gStatus("Salvato.");
+  }catch(e){gStatus(e.code==="auth"?"Non è possibile salvare: avvisa chi ti ha mandato il link.":"Salvataggio non riuscito (connessione?). Riprovo…",true);
+    if(e.code!=="auth")setTimeout(()=>{if(!gTimer&&!gWriting&&GRP)gFlush();},5000);}
   gWriting=false; if(gAgain){gAgain=false;gFlush();}
 }
 
@@ -822,6 +920,10 @@ function righeGruppo(g,i){
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  if(b.dataset.tab==="mio"){ // responsabile: gli ordini del suo gruppo
+    if(RESPOK&&S.mk[RESPOK.gid])openGroupInside(RESPOK.gid,RESPOK.ok).catch(err=>setStatus("Non riuscito: "+(err.message||err),true));
+    else setStatus("Il tuo gruppo non ha ancora l'accesso agli ordini: chiedi all'amministratore.",true);
+    return;}
   document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
   ["pers","grp","pub","imp","print"].forEach(t=>$("#tab-"+t).classList.toggle("hidden",t!==b.dataset.tab));
   if(b.dataset.tab==="print")renderPreview();
@@ -915,7 +1017,7 @@ function renderPreview(){
 }
 function renderAll(){renderPers();renderGroups();renderSettings();if(!$("#tab-print").classList.contains("hidden"))renderPreview();
   if(!$("#tab-pub").classList.contains("hidden"))renderPubs(); if(!$("#tab-imp").classList.contains("hidden")&&!($("#tab-imp").contains(document.activeElement)&&/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)))renderImp();}
-setInterval(()=>{if(MODE==="admin"&&!document.hidden&&!$("#tab-pub").classList.contains("hidden"))loadOrders();},30000);
+setInterval(()=>{if(ROLE==="admin"&&!document.hidden&&!$("#tab-pub").classList.contains("hidden"))loadOrders();},30000);
 
 /* ---------- proclamatori: eventi ---------- */
 $("#q").oninput=renderPers; $("#fGroup").onchange=renderPers;
@@ -1151,7 +1253,7 @@ $("#prevMode").onchange=e=>{printMode=e.target.value;renderPreview();};
 $("#btnBackup").onclick=()=>offer(fileName("json"),new Blob([JSON.stringify(S,null,1)],{type:"application/json"}));
 $("#fileImport").onchange=async e=>{
   const f=e.target.files[0]; e.target.value=""; if(!f)return;
-  try{const data=normalize(JSON.parse(await f.text()));
+  try{const data=normalize(JSON.parse(await f.text())); data.mk=Object.assign({},S.mk,data.mk); // le chiavi dei gruppi restano
     confirmDlg("Ripristinare la copia?",`Contiene ${data.persone.length} proclamatori e ${data.gruppi.length} gruppi. I dati attuali verranno sostituiti.`,()=>{S=data;changed();});}
   catch(err){$("#pdfHint").textContent="File non valido.";}
 };
